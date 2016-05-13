@@ -1,5 +1,12 @@
 module type F = sig
-  type expr
+
+  type texpr
+
+  type expr =
+    | And of expr * expr
+    | Or of expr * expr
+    | Theory_expr of texpr
+
   type domain
 
   type litteral =
@@ -15,12 +22,17 @@ module type F = sig
 end
 
 module IFormula (T : sig
-    type expr
+    type texpr
     type domain
   end) = struct
 
-  type expr = T.expr
+  type texpr = T.texpr
   type domain = T.domain
+
+  type expr =
+    | And of expr * expr
+    | Or of expr * expr
+    | Theory_expr of texpr
 
   type litteral =
     | Lit of string

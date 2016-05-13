@@ -12,31 +12,34 @@ module LA_SMT  = struct
     | Bool
 
   type expr =
-    | And of expr * expr
-    | Or of expr * expr
-    | Greater of expr * expr
-    | Equality of expr * expr
     | Value of int
     | Var of string
+
+  type rel =
+    | Greater of expr * expr
+    | Equality of expr * expr
 
   type bound =
     | Ninf
     | Pinf
-    | Var of string
-    | Value of int
+    | Expr of expr
+
   type interval = bound * bound
   type domain = interval list
 
-    exception Unknown_answer of string
-    exception Cardinality_uncomputed
-    exception Unbounded_interval
+  exception Unknown_answer of string
+  exception Cardinality_uncomputed
+  exception Unbounded_interval
 
-  let bound_to_string = function
-    | Ninf | Pinf -> raise Unbounded_interval
+  let expr_to_string = function
     | Var s -> s
     | Value i -> string_of_int i
 
-      let interval_to_string (l, u) =
+  let bound_to_string = function
+    | Ninf | Pinf -> raise Unbounded_interval
+    | Expr e -> expr_to_string e
+
+  let interval_to_string (l, u) =
     bound_to_string u ^ " - " ^ bound_to_string l
 
   let domain_to_string dom =
@@ -44,11 +47,10 @@ module LA_SMT  = struct
     |> List.map interval_to_string
     |> String.concat "+"
 
-  type texpr = expr
   type tdomain = domain
 
   module Formula = IFormula(struct
-      type expr = texpr
+      type texpr = rel
       type domain = tdomain
     end)
 
