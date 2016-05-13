@@ -19,7 +19,30 @@ module LA_SMT  = struct
     | Value of int
     | Var of string
 
-  type domain = int
+  type bound =
+    | Ninf
+    | Pinf
+    | Var of string
+    | Value of int
+  type interval = bound * bound
+  type domain = interval list
+
+    exception Unknown_answer of string
+    exception Cardinality_uncomputed
+    exception Unbounded_interval
+
+  let bound_to_string = function
+    | Ninf | Pinf -> raise Unbounded_interval
+    | Var s -> s
+    | Value i -> string_of_int i
+
+      let interval_to_string (l, u) =
+    bound_to_string u ^ " - " ^ bound_to_string l
+
+  let domain_to_string dom =
+    dom
+    |> List.map interval_to_string
+    |> String.concat "+"
 
   type texpr = expr
   type tdomain = domain
@@ -47,7 +70,6 @@ module LA_SMT  = struct
     | Int -> send_to_solver @@ "(declare-fun " ^ name ^ " () Int)"
     | Bool -> send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
 
-  exception Unknown_answer of string
 
   let is_sat () =
     match input_line solver_in with
@@ -60,7 +82,8 @@ module LA_SMT  = struct
     List.iter (function
         | Lit a -> send_to_solver @@ "(assert " ^ a ^ ")"
         | NotLit a -> send_to_solver @@ "(assert (not " ^ a ^ "))"
-        | Card(var, _, Some dom) -> send_to_solver @@ "(assert " ^ (domain_to_string dom var) ^ ")"
+        | Card(var, _, Some dom) -> send_to_solver @@ "(assert (= " ^ var ^ " " ^ domain_to_string dom ^ ")"
+        | Card(_) -> raise Cardinality_uncomputed
       ) l;
     send_to_solver "(check-sat)";
     send_to_solver "(pop 1)";
