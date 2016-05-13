@@ -1,6 +1,6 @@
-open Formula
-
 module Dpll_solver (T: Theory.T) = struct
+
+  open T.Formula
 
   type result = Sat | Unsat
 

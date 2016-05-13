@@ -1,5 +1,6 @@
 open Dpll_solver
-open Formula
+open Theory.LA_SMT
+open Theory.LA_SMT.Formula
 
 module Solver = Dpll_solver(Theory.LA_SMT)
 

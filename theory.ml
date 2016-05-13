@@ -1,10 +1,35 @@
 open Formula
 
 module type T = sig
-  val check_consistent : litteral list -> bool
+  module Formula : F
+  val check_consistent : Formula.litteral list -> bool
 end
 
 module LA_SMT  = struct
+
+  type sort =
+    | Int
+    | Bool
+
+  type expr =
+    | And of expr * expr
+    | Or of expr * expr
+    | Greater of expr * expr
+    | Equality of expr * expr
+    | Value of int
+    | Var of string
+
+  type domain = int
+
+  type texpr = expr
+  type tdomain = domain
+
+  module Formula = IFormula(struct
+      type expr = texpr
+      type domain = tdomain
+    end)
+
+  open Formula
 
   let solver_command = "yices-smt2 --incremental"
 
@@ -20,7 +45,7 @@ module LA_SMT  = struct
 
   let use_var name = function
     | Int -> send_to_solver @@ "(declare-fun " ^ name ^ " () Int)"
-      | Bool -> send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
+    | Bool -> send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
 
   exception Unknown_answer of string
 
@@ -35,6 +60,7 @@ module LA_SMT  = struct
     List.iter (function
         | Lit a -> send_to_solver @@ "(assert " ^ a ^ ")"
         | NotLit a -> send_to_solver @@ "(assert (not " ^ a ^ "))"
+        | Card(var, _, Some dom) -> send_to_solver @@ "(assert " ^ (domain_to_string dom var) ^ ")"
       ) l;
     send_to_solver "(check-sat)";
     send_to_solver "(pop 1)";
