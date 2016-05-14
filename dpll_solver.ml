@@ -15,6 +15,9 @@ module Dpll_solver (T: Theory.T) = struct
   (* cnf is assumed to contain no assumptions litteral *)
   let rec solve_with_assumptions assumptions cnf =
     let assume_and_solve l cnf =
+      match l with
+      | Ca  -> expr
+      | _ -> expr2
       let assumptions = (l :: assumptions) in
       if T.check_consistent assumptions then
         remove_litteral l cnf
