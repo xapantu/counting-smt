@@ -2,7 +2,11 @@ open Formula
 
 module type T = sig
   module Formula : F
+  open Formula
   val check_consistent : Formula.litteral list -> bool
+  val make_domain_intersection : Formula.assumptions -> Formula.domain -> Formula.domain -> (Formula.assumptions -> domain -> 'a) -> 'a
+  val make_domain_union : Formula.assumptions -> domain -> domain -> (assumptions -> domain -> 'a) -> 'a
+  val make_domain_from_expr : Formula.assumptions -> Formula.texpr -> (assumptions -> domain -> 'a) -> 'a
 end
 
 module LA_SMT  = struct
@@ -90,5 +94,35 @@ module LA_SMT  = struct
     send_to_solver "(check-sat)";
     send_to_solver "(pop 1)";
     is_sat ()
+
+  let interval_domain_union a t d cont =
+    match d2 with
+    | [] -> cont a [t]
+    | t::q -> interval_domain_union a t1 q (fun a d ->
+        interval_union a t1 t (fun a t ->
+            cont a (t::d)
+          )
+      )
+
+  let rec interval_domain a t1 d2 cont =
+    match d2 with
+    | [] -> cont a []
+    | t::q -> interval_domain a t1 q (fun a q ->
+        interval_intersection a t1 t (fun a t ->
+            cont a (t::q)
+          )
+      )
+
+  let rec make_domain_intersection_aux a d1 d2 d_res cont =
+    match d1 with
+    | [] -> cont a d_res
+    | t1::q1 ->
+      interval_domain a t1 d2 (fun a d ->
+          make_domain_union a d d_res (fun a d ->
+              make_domain_intersection a q1 d2 d cont)
+        )
+
+let make_domain_intersection a d1 d2 cont =
+  make_domain_intersection_aux a d1 d2 [] cont
 
 end

@@ -15,6 +15,7 @@ module type F = sig
     | Card of string * expr * (domain option)
 
   type cnf = litteral list list
+  type assumptions = litteral list
 
   val litteral_eq_neg : litteral -> litteral -> bool
   val litteral_neg : litteral -> litteral
