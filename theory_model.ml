@@ -134,7 +134,6 @@ module LA_SMT = struct
       a
 
   let get_sort name =
-    print_endline name;
     fst @@ List.find (fun (s, n) -> name = n) !vars
 
   let ensure_int name =
