@@ -227,15 +227,15 @@ module LA_SMT = struct
 
 
   let implies_card assumptions str domain =
-    "(assert (=> " ^
+    "(=> " ^
     assumptions_to_smt assumptions ^ " (= " ^
-    str ^ " " ^ domain_cardinality domain ^ ")))"
-    |> send_to_solver
+    str ^ " " ^ domain_cardinality domain ^ "))"
+    |> assert_formula
 
 
   let solve_assuming assumptions cont =
     solve_in_context (fun () ->
-        send_to_solver (Format.sprintf "(assert %s)" (assumptions_to_smt assumptions)))
+        assumptions_to_smt assumptions |> assert_formula)
       cont
 
 
