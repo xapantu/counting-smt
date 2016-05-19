@@ -38,3 +38,4 @@ rule read =
   | '('      { LEFT_BRACE }
   | ')'      { RIGHT_BRACE }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
+  | eof { EOF }

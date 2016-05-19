@@ -4,12 +4,14 @@
 %token RIGHT_BRACE
 %token TRUE
 %token FALSE
+%token EOF
 (* part 1 *)
 %start <Lisp.lisp> prog
 %%
 (* part 2 *)
 prog:
   | v = value { v }
+  | EOF { Lisp.(Lisp_rec(Lisp_string "pop" :: Lisp_int 1 :: []))}
   ;
 
 (* part 3 *)

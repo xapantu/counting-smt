@@ -385,6 +385,13 @@ module LA_SMT = struct
         cont (model, (Greater(a, plus_one b))::assum) []
       else
         cont (model, (Greater(b, plus_one a))::assum) []
+    | BEquality(a, b) ->
+      let a_val = get_val_from_model model a and
+      b_val = get_val_from_model model b in
+      if a_val = b_val then
+        cont (model, (BEquality(a, b))::assum) [(Ninf, Pinf)]
+      else
+        cont (model, (BEquality(not_term a, b))::assum) []
     | Bool(a) ->
       let a_val = get_val_from_model model a in
       if a_val then
@@ -408,6 +415,10 @@ module LA_SMT = struct
               expr_to_domain_cps a e2 (fun a d2 ->
                   make_domain_union a d1 d2 cont
                 )
+            )
+        | Not(e) ->
+          expr_to_domain_cps a e (fun a d ->
+              cont a (domain_neg d)
             )
         | Theory_expr(e) -> make_domain_from_expr var_name a e cont
     in

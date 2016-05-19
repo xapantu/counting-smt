@@ -14,6 +14,7 @@ let fresh_var =
 
 exception Out
 exception Not_allowed of string
+exception Not_allowed_for_type of string * string
 
 let rec lisp_to_bool_texpr =
   let open Lisp in
@@ -21,6 +22,7 @@ let rec lisp_to_bool_texpr =
   | Lisp_true -> BValue true
   | Lisp_false -> BValue false
   | Lisp_string(z) -> (ensure_bool z; BVar(z, true))
+  | a -> raise (Not_allowed_for_type(lisp_to_string a, "bool"))
 
 let rec lisp_to_int_texpr =
   let open Lisp in
@@ -58,50 +60,55 @@ let rec extract_cards l =
     let l, cards = List.map extract_cards l |> List.split in
     Lisp_rec (l), List.concat cards
 
+
+let lexing_stdin =
+    stdin |> Lexing.from_channel
+
 let rec runner cards' =
   let cards = ref cards' in
   try
     while true do
-      let lisp = stdin
-                 |> Lexing.from_channel
-                 |> Lisp_parser.prog Lisp_lexer.read in
       let open Lisp in
-      match lisp with
-      | Lisp_rec (Lisp_string "set-logic" :: _) ->
-        lisp_to_string lisp
-        |> LA_SMT.send_to_solver
-      | Lisp_rec (Lisp_string "get-model" :: []) ->
-        begin
-          try
-            Solver.solve_context !cards  |> LA_SMT.print_model
-          with
-          | LA_SMT.Unsat -> print_endline "unsat"
-        end
-      | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Int" :: []) ->
-        LA_SMT.use_var x Int
-      | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Bool" :: []) ->
-        LA_SMT.use_var x Bool
-      | Lisp_rec (Lisp_string "push" :: Lisp_int 1 :: []) ->
-        LA_SMT.push (fun () -> runner !cards)
-      | Lisp_rec (Lisp_string "pop" :: Lisp_int 1 :: []) ->
-        raise Out
-      | Lisp_rec (Lisp_string "assert" :: a :: []) ->
-        begin
-          let assertion_cardless, new_cards = extract_cards a in
-          Lisp_rec (Lisp_string "assert" :: assertion_cardless :: [])
-          |> lisp_to_string
-          |> send_to_solver;
-          cards := new_cards @ !cards
-        end
-      | Lisp_rec (Lisp_string "check-sat" :: []) ->
-        begin
-          try
-            let _ = Solver.solve_context !cards in
-            print_endline "sat"
-          with
-          | LA_SMT.Unsat -> print_endline "unsat"
-        end
-      | a -> raise (Not_allowed (lisp_to_string a))
+      lexing_stdin
+      |> Lisp_parser.prog Lisp_lexer.read
+      |> (fun lisp ->
+          match lisp with
+          | Lisp_rec (Lisp_string "set-logic" :: _) ->
+            lisp_to_string lisp
+            |> LA_SMT.send_to_solver
+          | Lisp_rec (Lisp_string "get-model" :: []) ->
+            begin
+              try
+                Solver.solve_context !cards  |> LA_SMT.print_model
+              with
+              | LA_SMT.Unsat -> print_endline "unsat"
+            end
+          | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Int" :: []) ->
+            LA_SMT.use_var x Int
+          | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Bool" :: []) ->
+            LA_SMT.use_var x Bool
+          | Lisp_rec (Lisp_string "push" :: Lisp_int 1 :: []) ->
+            LA_SMT.push (fun () -> runner !cards)
+          | Lisp_rec (Lisp_string "pop" :: Lisp_int 1 :: []) ->
+            raise Out
+          | Lisp_rec (Lisp_string "assert" :: a :: []) ->
+            begin
+              let assertion_cardless, new_cards = extract_cards a in
+              Lisp_rec (Lisp_string "assert" :: assertion_cardless :: [])
+              |> lisp_to_string
+              |> send_to_solver;
+              cards := new_cards @ !cards
+            end
+          | Lisp_rec (Lisp_string "check-sat" :: []) ->
+            begin
+              try
+                let _ = Solver.solve_context !cards in
+                print_endline "sat"
+              with
+              | LA_SMT.Unsat -> print_endline "unsat"
+            end
+          | a -> raise (Not_allowed (lisp_to_string a))
+        )
     done
   with
   | Out -> ()
