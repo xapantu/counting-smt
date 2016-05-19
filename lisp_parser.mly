@@ -4,7 +4,6 @@
 %token RIGHT_BRACE
 %token TRUE
 %token FALSE
-%token EOF
 (* part 1 *)
 %start <Lisp.lisp> prog
 %%

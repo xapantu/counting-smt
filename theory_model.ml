@@ -11,7 +11,7 @@ module type T = sig
   val solve: (model -> 'a) -> 'a
   val solve_formula: expr -> (model -> 'a) -> 'a
   val domain_cardinality: domain -> string
-  val expr_to_domain: model -> expr -> (domain * assumptions)
+  val expr_to_domain: model -> string -> expr -> (domain * assumptions)
   val implies_card: assumptions -> string -> domain -> unit
   val solve_assuming: assumptions -> (model -> 'a) -> 'a
 
@@ -23,44 +23,62 @@ module LA_SMT = struct
     | Int
     | Bool
 
-  type term =
-    | Value of int
-    | Var of string * int
+  type _ term =
+    | IValue : int -> int term
+    | IVar : string * int -> int term
+    | BValue : bool -> bool term
+    | BVar : string * bool -> bool term
+
+  type concrete_value =
+    | VBool of bool
+    | VInt of int
 
   type rel =
-    | Greater of term * term
-    | Equality of term * term
+    | Greater of int term * int term
+    | IEquality of int term * int term
+    | BEquality of bool term * bool term
+    | Bool of bool term
 
   type bound =
     | Ninf
     | Pinf
-    | Expr of term
+    | Expr of int term
 
   type interval = bound * bound
   type domain = interval list
 
-  type assignation = string * int
+  type assignation = string * concrete_value
   type model = assignation list
 
   exception Unknown_answer of string
   exception Unbounded_interval
   exception Unsat
+  exception TypeCheckingError of string
 
-  let expr_to_string = function
-    | Var (s, 0) -> s
-    | Var (s, i) when i > 0 -> "(+ " ^ s ^ " " ^ string_of_int i ^ ")"
-    | Var (s, i) when i < 0 -> "(- " ^ s ^ " " ^ string_of_int (-i) ^ ")"
-    | Value i -> string_of_int i
+  let term_to_string: type a. a term -> string = function
+    | IVar (s, 0) -> s
+    | IVar (s, i) when i > 0 -> "(+ " ^ s ^ " " ^ string_of_int i ^ ")"
+    | IVar (s, i) (* when i < 0 *) -> "(- " ^ s ^ " " ^ string_of_int (-i) ^ ")"
+    | BValue(false) -> "false"
+    | BValue(true) -> "true"
+    | BVar(s, true) -> s
+    | BVar(s, false) -> Format.sprintf "(not %s)" s
+    | IValue i -> string_of_int i
+
 
   let rec rel_to_smt = function
     | Greater(e1, e2) ->
-      "(>= " ^ expr_to_string e1 ^ " " ^ expr_to_string e2 ^ ")"
-    | Equality(e1, e2) ->
-      "(= " ^ expr_to_string e1 ^ " " ^ expr_to_string e2 ^ ")"
+      "(>= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
+    | IEquality(e1, e2) ->
+      "(= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
+    | BEquality(e1, e2) ->
+      "(= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
+    | Bool(b) ->
+      term_to_string b
 
   let bound_to_string = function
     | Ninf | Pinf -> raise Unbounded_interval
-    | Expr e -> expr_to_string e
+    | Expr e -> term_to_string e
 
   let interval_to_string (l, u) =
     "(+ (- " ^ bound_to_string u ^ " " ^ bound_to_string l ^ ") 1)"
@@ -88,7 +106,7 @@ module LA_SMT = struct
   let send_to_solver s =
     output_string solver_out s;
     if !verbose then
-    Format.printf " -> %s@." s;
+      Format.printf " -> %s@." s;
     output_string solver_out "\n";
     flush solver_out
 
@@ -97,35 +115,59 @@ module LA_SMT = struct
   let vars = ref []
   let use_var name = function
     | Int ->
-      let () = vars := name :: !vars in
+      let () = vars := (Int, name) :: !vars in
       send_to_solver @@ "(declare-fun " ^ name ^ " () Int)"
     | Bool ->
-      let () = vars := name :: !vars in
+      let () = vars := (Bool, name) :: !vars in
       send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
+
+  let use_quantified_var name f = function
+    | Int ->
+      let () = vars := (Int, name) :: !vars in
+      let a = f () in
+      let () = vars := List.tl !vars in
+      a
+    | Bool ->
+      let () = vars := (Bool, name) :: !vars in
+      let a = f () in
+      let () = vars := List.tl !vars in
+      a
+
+  let get_sort name =
+    print_endline name;
+    fst @@ List.find (fun (s, n) -> name = n) !vars
+
+  let ensure_int name =
+    if get_sort name = Int then ()
+    else raise (TypeCheckingError name)
+
+  let ensure_bool name =
+    if get_sort name = Bool then ()
+    else raise (TypeCheckingError name)
 
 
   let rec is_sat () =
     let l = input_line solver_in in
     if l <> "" then
-    match l with
-    | "sat" -> true
-    | "unsat" -> false
-    | a -> raise (Unknown_answer a)
+      match l with
+      | "sat" -> true
+      | "unsat" -> false
+      | a -> raise (Unknown_answer a)
     else is_sat ()
 
   let get_model () =
-    send_to_solver (Format.sprintf "(get-value (%s))" (String.concat " " !vars));
+    send_to_solver (Format.sprintf "(get-value (%s))" (List.map snd !vars |> String.concat " "));
+    let open Lisp in
     let get_var lisp =
-      let open Lisp in
       match lisp with
       | Lisp_rec(Lisp_string b :: Lisp_int v :: []) ->
-        (b, v)
+        (b, VInt v)
       | Lisp_rec(Lisp_string b :: Lisp_rec(Lisp_string "-" :: Lisp_int v :: []) :: []) ->
-        (b, -v)
+        (b, VInt(-v))
       | Lisp_rec(Lisp_string b :: Lisp_true :: []) ->
-        (b, 1)
+        (b, VBool true)
       | Lisp_rec(Lisp_string b :: Lisp_false :: []) ->
-        (b, 0)
+        (b, VBool false)
       | a -> raise (Unknown_answer ("couldn't understand that " ^ lisp_to_string a))
     in
     let lisp = solver_in
@@ -169,17 +211,19 @@ module LA_SMT = struct
 
   let assert_formula str =
     "(assert " ^ str ^ ")"
-  |> send_to_solver
+    |> send_to_solver
 
   let solve_formula expr cont =
     solve_in_context (fun () ->
         assert_formula @@ expr_to_smt expr
-        )
+      )
       cont
 
   let print_model m =
     List.iter (fun (b, v) ->
-        Format.printf "%s = %d@." b v)
+        match v with
+        | VBool(t) ->  Format.printf "%s = %b@." b t
+        | VInt(v) -> Format.printf "%s = %d@." b v)
       m
 
 
@@ -197,25 +241,50 @@ module LA_SMT = struct
 
 
 
-  let plus_one = function
-    | Var(a, i) -> Var(a, i + 1)
-    | Value(i) -> Value (i + 1)
+  let (plus_one: int term -> int term) = function
+    | IVar(a, i) -> IVar(a, i + 1)
+    | IValue(i) -> IValue (i + 1)
 
-  let minus_one = function
-    | Var(a, i) -> Var(a, i - 1)
-    | Value(i) -> Value (i - 1)
+  let (minus_one: int term -> int term) = function
+    | IVar(a, i) -> IVar(a, i - 1)
+    | IValue(i) -> IValue (i - 1)
 
-  let get_val model = function
-    | Var(a, i) ->
-      (snd @@ List.find (fun (v,b) -> v = a) model) + i
-    | Value(i) -> i
 
+  let minus:int -> int term -> int term = fun n -> function
+    | IVar(a, i) -> IVar(a, i - n)
+    | IValue(i) -> IValue (i - n)
+
+  let not_term: bool term -> bool term = function
+    | BValue(k) -> BValue(not k)
+    | BVar(s, k) -> BVar (s, not k)
+
+  let get_val_from_model: type a. model -> a term -> a = fun model -> function
+    | IVar(a, i) ->
+      begin
+        let k = snd @@ List.find (fun (v,b) -> v = a) model in
+        match k with
+        | VInt(k) -> k+i
+        | _ -> raise (TypeCheckingError a)
+      end
+    | IValue(i) -> i
+    | BValue(b) -> b
+    | BVar(a, modi) ->
+      begin
+        let k = snd @@ List.find (fun (v,b) -> v = a) model in
+        match k with
+        | VBool(k) -> (modi && k) || (not modi && not k)
+        | _ -> raise (TypeCheckingError a)
+      end
+
+  exception Bad_interval
 
   let domain_neg d =
     let rec domain_neg_aux old_bound = function
       | (Ninf, Expr a)::q -> domain_neg_aux (Expr  (plus_one a)) q
       | (Expr a, Pinf)::q -> [(old_bound, Expr (minus_one a))]
       | (Expr a, Expr b)::q -> (old_bound, Expr (minus_one a)) :: domain_neg_aux (Expr (plus_one b)) q
+      | (Pinf, _)::_ | (_, Ninf)::_ -> raise Bad_interval
+      | (Ninf, Pinf)::_ -> []
       | [] -> [(old_bound, Pinf)]
     in
     domain_neg_aux Ninf d
@@ -234,7 +303,7 @@ module LA_SMT = struct
       | Pinf, _  -> true
       | _, Pinf  -> false
       | Expr a, Expr b ->
-        let a_val, b_val = get_val model a, get_val model b in
+        let a_val, b_val = get_val_from_model model a, get_val_from_model model b in
         if a_val >= b_val then
           (assume (Greater(a, b)); true)
         else
@@ -245,9 +314,9 @@ module LA_SMT = struct
       | Ninf, Ninf -> true
       | Pinf, Pinf -> true
       | Expr a, Expr b ->
-        let a_val, b_val = get_val model a, get_val model b in
+        let a_val, b_val = get_val_from_model model a, get_val_from_model model b in
         if a_val = b_val then
-          (assume (Equality(a, b)); true)
+          (assume (IEquality(a, b)); true)
         else if a_val > b_val then
           (assume (Greater(a, plus_one b)); false)
         else
@@ -295,14 +364,36 @@ module LA_SMT = struct
         |> cont a)
 
 
-  let make_domain_from_expr assum e cont =
+  let make_domain_from_expr var_name (model, assum) e cont =
     match e with
-    | Greater(Var("z", 0), a) -> cont assum [(Expr a, Pinf)]
-    | Greater(a, Var("z", 0)) -> cont assum [(Ninf, Expr a)]
-    | Equality(a, Var("z", 0)) -> cont assum [(Expr a, Expr a)]
-    | Equality(Var("z", 0), a) -> cont assum [(Expr a, Expr a)]
+    | Greater(IVar(v, n), a) when v = var_name -> cont (model, assum) [(Expr (minus n a), Pinf)]
+    | Greater(a, IVar(v, n)) when v = var_name -> cont (model, assum) [(Ninf, Expr(minus n a))]
+    | IEquality(a, IVar(v, n)) when v = var_name -> cont (model, assum) [(Expr(minus n a), Expr(minus n a))]
+    | IEquality(IVar(v, n), a) when v = var_name -> cont (model, assum) [(Expr(minus n a), Expr(minus n a))]
+    | Greater(a, b) ->
+      let a_val = get_val_from_model model a and
+      b_val = get_val_from_model model b in
+      if a_val >= b_val then
+        cont (model, (Greater(a, b))::assum) [(Ninf, Pinf)]
+      else
+        cont (model, (Greater(b, plus_one a))::assum) []
+    | IEquality(a, b) ->
+      let a_val = get_val_from_model model a and
+      b_val = get_val_from_model model b in
+      if a_val = b_val then
+        cont (model, (IEquality(a, b))::assum) [(Ninf, Pinf)]
+      else if a_val > b_val then
+        cont (model, (Greater(a, plus_one b))::assum) []
+      else
+        cont (model, (Greater(b, plus_one a))::assum) []
+    | Bool(a) ->
+      let a_val = get_val_from_model model a in
+      if a_val then
+        cont (model, Bool(a)::assum) [(Ninf, Pinf)]
+      else
+        cont (model, Bool(not_term a)::assum) []
 
-  let expr_to_domain model expr =
+  let expr_to_domain model var_name expr =
     let rec (expr_to_domain_cps:
                (model * assumptions) -> expr -> ((model * assumptions) -> domain -> 'a) -> 'a)
       = fun a expr cont ->
@@ -319,7 +410,7 @@ module LA_SMT = struct
                   make_domain_union a d1 d2 cont
                 )
             )
-        | Theory_expr(e) -> make_domain_from_expr a e cont
+        | Theory_expr(e) -> make_domain_from_expr var_name a e cont
     in
     expr_to_domain_cps (model, []) expr (fun (_, a) d -> d, a)
 

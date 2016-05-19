@@ -1,3 +1,6 @@
 _build
 main.byte
+smtlib.byte
+smtlib.d.byte
+main.d.byte
 _tags

@@ -6,52 +6,45 @@ module type F = sig
     | And of expr * expr
     | Or of expr * expr
     | Theory_expr of texpr
+    | Not of expr
 
-  type domain
+  type assumptions = texpr list
 
-  type litteral =
-    | Lit of string
-    | NotLit of string
-    | Card of string * expr * (domain option)
-
-  type cnf = litteral list list
-  type assumptions = litteral list
-
-  val litteral_eq_neg : litteral -> litteral -> bool
-  val litteral_neg : litteral -> litteral
+  type card = { var_name: string; expr: expr; quantified_var: string; }
 
 end
 
 module IFormula (T : sig
     type texpr
-    type domain
+    val texpr_to_smt: texpr -> string
   end) = struct
 
   type texpr = T.texpr
-  type domain = T.domain
 
   type expr =
     | And of expr * expr
     | Or of expr * expr
     | Theory_expr of texpr
+    | Not of expr
 
-  type litteral =
-    | Lit of string
-    | NotLit of string
-    | Card of string * expr * (domain option)
 
-  type cnf = litteral list list
+    type assumptions = texpr list
 
-  exception Cardinality_negation
+    type card = { var_name: string; expr: expr; quantified_var: string; }
 
-  let litteral_eq_neg a b = match a, b with
-    | Lit a, NotLit b when a = b -> true
-    | NotLit a, Lit b when a = b -> true
-    | _ -> false
+    let rec expr_to_smt = function
+      | And(e1, e2) -> "(and " ^ expr_to_smt e1 ^ " " ^ expr_to_smt e2 ^ ")"
+      | Or(e1, e2) -> "(or " ^ expr_to_smt e1 ^ " " ^ expr_to_smt e2 ^ ")"
+      | Not(e) -> Format.sprintf "(not %s)" @@ expr_to_smt e
+      | Theory_expr(t) -> T.texpr_to_smt t
 
-  let litteral_neg = function
-    | Lit a -> NotLit a
-    | NotLit a -> Lit a
-    | _ -> raise Cardinality_negation
+    let assumptions_to_smt l =
+      if l = [] then "true"
+      else
+      "(and " ^
+      (
+        l |> List.map T.texpr_to_smt
+        |> String.concat " ")
+      ^ ")"
 
 end

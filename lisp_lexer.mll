@@ -32,9 +32,9 @@ rule read =
   | white    { read lexbuf }
   | newline  { next_line lexbuf; read lexbuf }
   | int      { INT (int_of_string (Lexing.lexeme lexbuf)) }
-  | id      { STRING  (Lexing.lexeme lexbuf) }
   | "true"   { TRUE }
   | "false"  { FALSE }
+  | id      { STRING  (Lexing.lexeme lexbuf) }
   | '('      { LEFT_BRACE }
   | ')'      { RIGHT_BRACE }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }

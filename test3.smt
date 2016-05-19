@@ -1,0 +1,6 @@
+(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(declare-fun a () Bool)
+(assert (and (= x 5) (= a false) (= y (# u (and a (>= x u) (>= u 0))))))
+(check-sat)

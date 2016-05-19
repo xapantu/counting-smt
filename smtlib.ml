@@ -15,16 +15,21 @@ let fresh_var =
 exception Out
 exception Not_allowed of string
 
-let rec lisp_to_texpr =
+let rec lisp_to_bool_texpr =
   let open Lisp in
   function
-  | Lisp_string(z) -> Var(z, 0)
-  | Lisp_int (v) -> Value v
-  | Lisp_true -> Value 1
-  | Lisp_false -> Value 0
-  | Lisp_rec(Lisp_string "+" :: Lisp_string z :: Lisp_int i :: []) -> Var(z, i)
-  | Lisp_rec(Lisp_string "-" :: Lisp_string z :: Lisp_int i :: []) -> Var(z, -i)
-  | Lisp_rec(Lisp_string "+" :: Lisp_int i :: Lisp_string z :: []) -> Var(z, i)
+  | Lisp_true -> BValue true
+  | Lisp_false -> BValue false
+  | Lisp_string(z) -> (ensure_bool z; BVar(z, true))
+
+let rec lisp_to_int_texpr =
+  let open Lisp in
+  function
+  | Lisp_string(z) -> (ensure_int z; IVar(z, 0))
+  | Lisp_int (v) -> IValue v
+  | Lisp_rec(Lisp_string "+" :: Lisp_string z :: Lisp_int i :: []) -> (ensure_int z; IVar(z, i))
+  | Lisp_rec(Lisp_string "-" :: Lisp_string z :: Lisp_int i :: []) -> (ensure_int z; IVar(z, -i))
+  | Lisp_rec(Lisp_string "+" :: Lisp_int i :: Lisp_string z :: []) -> (ensure_int z; IVar(z, i))
   | a -> raise (Not_allowed (lisp_to_string a))
 
 let rec lisp_to_expr l =
@@ -34,8 +39,11 @@ let rec lisp_to_expr l =
   | Lisp_rec(Lisp_string "and" :: a :: q) -> And (lisp_to_expr a, lisp_to_expr (Lisp_rec (Lisp_string "and" :: q)))
   | Lisp_rec(Lisp_string "or" :: a :: b :: []) -> Or (lisp_to_expr a, lisp_to_expr b)
   | Lisp_rec(Lisp_string "or" :: a :: q) -> Or (lisp_to_expr a, lisp_to_expr (Lisp_rec (Lisp_string "or" :: q)))
-  | Lisp_rec(Lisp_string ">=" :: a :: b :: []) -> Theory_expr (Greater (lisp_to_texpr a, lisp_to_texpr b))
-  | Lisp_rec(Lisp_string "=" :: a :: b :: []) -> Theory_expr (Greater (lisp_to_texpr a, lisp_to_texpr b))
+  | Lisp_rec(Lisp_string ">=" :: a :: b :: []) -> Theory_expr (Greater (lisp_to_int_texpr a, lisp_to_int_texpr b))
+  | Lisp_rec(Lisp_string "=" :: a :: b :: []) -> Theory_expr (Greater (lisp_to_int_texpr a, lisp_to_int_texpr b))
+  | Lisp_true -> Theory_expr (Bool (BValue true))
+  | Lisp_false -> Theory_expr (Bool (BValue false))
+  | Lisp_string b -> Theory_expr (Bool (BVar(b, true)))
   | _ -> raise (Not_allowed (lisp_to_string l))
 
 let rec extract_cards l =
@@ -44,7 +52,8 @@ let rec extract_cards l =
   | Lisp_int _ | Lisp_string _ | Lisp_true | Lisp_false -> l, []
   | Lisp_rec (Lisp_string "#" :: Lisp_string z :: formula :: []) ->
     let y = fresh_var () in
-    Lisp_string (y), [{var_name = y; expr = lisp_to_expr formula}]
+    let formula = use_quantified_var z (fun () -> lisp_to_expr formula) Int in
+    Lisp_string (y), [{var_name = y; expr = formula; quantified_var = z}]
   | Lisp_rec (l) ->
     let l, cards = List.map extract_cards l |> List.split in
     Lisp_rec (l), List.concat cards
@@ -87,7 +96,7 @@ let rec runner cards' =
       | Lisp_rec (Lisp_string "check-sat" :: []) ->
         begin
           try
-            let m = Solver.solve_context !cards in
+            let _ = Solver.solve_context !cards in
             print_endline "sat"
           with
           | LA_SMT.Unsat -> print_endline "unsat"
@@ -100,10 +109,10 @@ let rec runner cards' =
 
 let _ =
   let verbose = ref false in
-(let open Arg in
-Arg.parse [
-  "--verbose", Set verbose, "be verbose";
-  ] (fun f ->
-     ()) "basic smt solver, takes input from stdin");
-LA_SMT.set_verbose !verbose;
+  (let open Arg in
+   Arg.parse [
+     "--verbose", Set verbose, "be verbose";
+   ] (fun f ->
+       ()) "basic smt solver, takes input from stdin");
+  LA_SMT.set_verbose !verbose;
   runner []
