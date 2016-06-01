@@ -4,5 +4,5 @@
 (declare-fun a () Int)
 (assert (and (>= a 1) (>= x 1)))
 (assert (= y (+ x a)))
-(assert (= y (# z (and (>= z 1) (or (>= x z) (>= a z))))))
+(assert (= y (# z Int (and (>= z 1) (or (>= x z) (>= a z))))))
 (check-sat)

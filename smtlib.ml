@@ -52,9 +52,14 @@ let rec extract_cards l =
   let open Lisp in
   match l with
   | Lisp_int _ | Lisp_string _ | Lisp_true | Lisp_false -> l, []
-  | Lisp_rec (Lisp_string "#" :: Lisp_string z :: formula :: []) ->
+  | Lisp_rec (Lisp_string "#" :: Lisp_string z :: Lisp_string sort :: formula :: []) ->
     let y = fresh_var () in
-    let formula = use_quantified_var z (fun () -> lisp_to_expr formula) Int in
+    let sort = match sort with
+      | "Int" -> Int
+      | "Bool" -> Bool
+      | a -> raise (Not_allowed_for_type(z, a))
+    in
+    let formula = use_quantified_var z (fun () -> lisp_to_expr formula) sort in
     Lisp_string (y), [{var_name = y; expr = formula; quantified_var = z}]
   | Lisp_rec (l) ->
     let l, cards = List.map extract_cards l |> List.split in
