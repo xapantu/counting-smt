@@ -66,10 +66,10 @@ let rec extract_cards l =
     Lisp_rec (l), List.concat cards
 
 
-let lexing_stdin =
+let lexing stdin =
     stdin |> Lexing.from_channel
 
-let rec runner cards' =
+let rec runner stdout lexing_stdin cards' =
   let cards = ref cards' in
   try
     while true do
@@ -84,16 +84,16 @@ let rec runner cards' =
           | Lisp_rec (Lisp_string "get-model" :: []) ->
             begin
               try
-                Solver.solve_context !cards  |> LA_SMT.print_model
+                Solver.solve_context !cards  |> LA_SMT.print_model stdout
               with
-              | LA_SMT.Unsat -> print_endline "unsat"
+              | LA_SMT.Unsat -> Printf.fprintf stdout "unsat\n"
             end
           | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Int" :: []) ->
             LA_SMT.use_var x Int
           | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Bool" :: []) ->
             LA_SMT.use_var x Bool
           | Lisp_rec (Lisp_string "push" :: Lisp_int 1 :: []) ->
-            LA_SMT.push (fun () -> runner !cards)
+            LA_SMT.push (fun () -> runner stdout lexing_stdin !cards)
           | Lisp_rec (Lisp_string "pop" :: Lisp_int 1 :: []) ->
             raise Out
           | Lisp_rec (Lisp_string "assert" :: a :: []) ->
@@ -108,9 +108,9 @@ let rec runner cards' =
             begin
               try
                 let _ = Solver.solve_context !cards in
-                print_endline "sat"
+                Printf.fprintf stdout "sat\n"
               with
-              | LA_SMT.Unsat -> print_endline "unsat"
+              | LA_SMT.Unsat -> Printf.fprintf stdout "unsat\n"
             end
           | a -> raise (Not_allowed (lisp_to_string a))
         )
@@ -119,12 +119,3 @@ let rec runner cards' =
   | Out -> ()
 
 
-let _ =
-  let verbose = ref false in
-  (let open Arg in
-   Arg.parse [
-     "--verbose", Set verbose, "be verbose";
-   ] (fun f ->
-       ()) "basic smt solver, takes input from stdin");
-  LA_SMT.set_verbose !verbose;
-  runner []

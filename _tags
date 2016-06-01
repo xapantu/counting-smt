@@ -1,3 +1,2 @@
-true: use_menhir
-<theory_model*>: package(unix)
-"smtlib.native": package(unix)
+true: use_menhir, package(unix)
+<tests*>: package(ounit)

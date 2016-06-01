@@ -97,22 +97,29 @@ module LA_SMT = struct
   open Formula
 
   let solver_command = "yices-smt2 --incremental"
+  let vars = ref []
 
-  let solver_in, solver_out = Unix.open_process solver_command
+  let solver_in, solver_out =
+    let a, b = Unix.open_process solver_command
+    in ref a, ref b
+
+  let reset_solver () =
+    close_in !solver_in; close_out !solver_out;
+    let a, b = Unix.open_process solver_command
+    in solver_in := a; solver_out := b; vars := []
 
   let verbose = ref false
   let set_verbose s = verbose := s
 
   let send_to_solver s =
-    output_string solver_out s;
+    output_string !solver_out s;
     if !verbose then
       Format.printf " -> %s@." s;
-    output_string solver_out "\n";
-    flush solver_out
+    output_string !solver_out "\n";
+    flush !solver_out
 
   (* let () = send_to_solver "(set-logic QF_LIA)"*)
 
-  let vars = ref []
   let use_var name = function
     | Int ->
       let () = vars := (Int, name) :: !vars in
@@ -146,7 +153,7 @@ module LA_SMT = struct
 
 
   let rec is_sat () =
-    let l = input_line solver_in in
+    let l = input_line !solver_in in
     if l <> "" then
       match l with
       | "sat" -> true
@@ -167,9 +174,9 @@ module LA_SMT = struct
         (b, VBool true)
       | Lisp_rec(Lisp_string b :: Lisp_false :: []) ->
         (b, VBool false)
-      | a -> raise (Unknown_answer ("couldn't understand that " ^ lisp_to_string a))
+      | a -> raise (Unknown_answer ("couldn't understand that \"" ^ lisp_to_string a ^ "\""))
     in
-    let lisp = solver_in
+    let lisp = !solver_in
                |> Lexing.from_channel
                |> Lisp_parser.prog Lisp_lexer.read in
     match lisp with
@@ -218,11 +225,11 @@ module LA_SMT = struct
       )
       cont
 
-  let print_model m =
+  let print_model stdout m =
     List.iter (fun (b, v) ->
         match v with
-        | VBool(t) ->  Format.printf "%s = %b@." b t
-        | VInt(v) -> Format.printf "%s = %d@." b v)
+        | VBool(t) ->  Printf.fprintf stdout "%s = %b\n" b t
+        | VInt(v) -> Printf.fprintf stdout "%s = %d\n" b v)
       m
 
 

@@ -4,4 +4,3 @@
 (declare-fun a () Bool)
 (assert (and (= x 5) (= a false) (= y (# u Int (and a (>= x u) (>= u 0))))))
 (check-sat)
-(get-model)
