@@ -1,5 +1,6 @@
 %token <int> INT
 %token <string> STRING
+%token <string> QUOTED
 %token LEFT_BRACE
 %token RIGHT_BRACE
 %token TRUE
@@ -20,6 +21,8 @@ value:
     { Lisp.Lisp_rec obj }
   | s = STRING
     { Lisp.Lisp_string s }
+  | s = QUOTED
+      { Lisp.Lisp_string s }
   | i = INT
     { Lisp.Lisp_int i }
   | FALSE

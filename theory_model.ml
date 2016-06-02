@@ -132,7 +132,15 @@ module LA_SMT = struct
     | Int ->
       let () = vars := (Int, name) :: !vars in
       let a = f () in
-      let () = vars := List.tl !vars in
+      let first = ref true in
+      let () = vars := List.filter (fun x -> 
+          if x = (Int, name) then
+            if !first then
+              false
+            else
+              (first := false; true)
+          else
+            true) !vars in
       a
     | Bool ->
       let () = vars := (Bool, name) :: !vars in
@@ -180,7 +188,14 @@ module LA_SMT = struct
                |> Lexing.from_channel
                |> Lisp_parser.prog Lisp_lexer.read in
     match lisp with
-    | Lisp_rec(l) -> List.map get_var l
+    | Lisp_rec(l) ->
+      begin
+        try
+          List.map get_var l
+        with
+        | Unknown_answer (a) ->
+          raise (Unknown_answer ("couldn't understand \"" ^ lisp_to_string lisp ^ "\" and more specifically:\n" ^ a))
+      end
     | _ -> raise (Unknown_answer ("couldn't understand root "))
 
 
