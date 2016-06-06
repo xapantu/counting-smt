@@ -37,8 +37,8 @@ let suite =
     "test1" >:: test_file "test1.smt" "sat\ncard!1 = 2\ny = 2\nx = 3\n";
     "test2" >:: test_file "test2.smt" "unsat\n";
     "test3" >:: test_file "test3.smt" "sat\n";
-    "test_quant_sum" >:: test_file "test_quant_sum.smt" "sat\n";
-    "test_sum" >:: test_file "test_sum.smt" "sat\n";
+    "test_quant_sum" >:: test_file "test_quant_sum.smt" "unsat\n";
+    "test_sum" >:: test_file "test_sum.smt" "unsat\n";
   ]
 ;;
 
