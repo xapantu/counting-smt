@@ -305,19 +305,19 @@ module LA_SMT = struct
       | (arrays, interv) :: q ->
         begin
           match interv with
-          | (Ninf, Expr a) -> domain_neg_aux (Expr  (plus_one a)) q
+          | (Ninf, Expr a) -> domain_neg_aux (Expr  a) q
           | (Expr a, Pinf) ->
             if Expr a = old_bound then
               []
             else
-              let interv = (old_bound, Expr (minus_one a)) in
+              let interv = (old_bound, Expr a) in
               [Arrays.mk_full_subdiv ctx interv, interv]
           | (Expr a, Expr b) ->
             if Expr a = old_bound then
-              domain_neg_aux (Expr (plus_one b)) q
+              domain_neg_aux (Expr b) q
             else
-              let interv = (old_bound, Expr (minus_one a)) in
-              (Arrays.mk_full_subdiv ctx interv, interv) :: domain_neg_aux (Expr (plus_one b)) q
+              let interv = (old_bound, Expr a) in
+              (Arrays.mk_full_subdiv ctx interv, interv) :: domain_neg_aux (Expr b) q
           | (Pinf, _) | (_, Ninf) -> raise Bad_interval
           | (Ninf, Pinf) -> []
         end
@@ -328,8 +328,7 @@ module LA_SMT = struct
     in
     let dneg = domain_neg_aux Ninf d
     in
-    dneg
-    (*if d = [] then dneg
+    if d = [] then dneg
     else
       let rec one_on_one l1 = function
         | t :: q ->t :: (one_on_one q l1)
@@ -340,7 +339,10 @@ module LA_SMT = struct
         | (_, (Ninf, _)) -> one_on_one dneg d
         | _ -> one_on_one d dneg
       in 
-      fin*)
+      fin
+      |> List.filter (fun (l, i) -> match l with
+          | Arrays.Bottom -> false
+          | _ -> true)
 
 
   let rec interval_domain_inter (model, a, array_ctx) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) (cont: 'a -> arrayed_domain -> 'c) : 'c =
@@ -423,9 +425,9 @@ module LA_SMT = struct
     let array_init = Arrays.full_array_subdivision in
     match e with
     | Greater(IVar(v, n), a) when v = var_name -> cont ctx [array_init, (Expr (minus n a), Pinf)]
-    | Greater(a, IVar(v, n)) when v = var_name -> cont ctx [array_init, (Ninf, Expr(minus n a))]
-    | IEquality(a, IVar(v, n)) when v = var_name -> cont ctx [array_init, (Expr(minus n a), Expr(minus n a))]
-    | IEquality(IVar(v, n), a) when v = var_name -> cont ctx [array_init, (Expr(minus n a), Expr(minus n a))]
+    | Greater(a, IVar(v, n)) when v = var_name -> cont ctx [array_init, (Ninf, Expr(minus (n-1) a))]
+    | IEquality(a, IVar(v, n)) when v = var_name -> cont ctx [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
+    | IEquality(IVar(v, n), a) when v = var_name -> cont ctx [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
     | Greater(a, b) ->
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in

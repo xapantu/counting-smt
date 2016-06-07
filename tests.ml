@@ -27,6 +27,23 @@ let test_file filename expected_result  _ =
   let res = read_not_blocking result_descr result_channel in
   expected_result res
 
+let test_domain_neg _ =
+  let open LA_SMT in
+  LA_SMT.reset_solver ();
+  let a_ctx = LA_SMT.Arrays.new_ctx() in
+  let dom = [(LA_SMT.Arrays.mk_full_subdiv a_ctx (Ninf, Pinf)), (Ninf, Pinf)] in
+  assert_equal (LA_SMT.domain_neg ([], [], a_ctx) dom) [];
+  let dom = [(LA_SMT.Arrays.mk_full_subdiv a_ctx (Ninf, Expr (IValue 6))), (Ninf, Expr (IValue 6))] in
+  let dom_neg = domain_neg ([], [], a_ctx) dom in
+  assert_equal (List.length dom_neg) 1;
+  assert_equal  (snd @@ List.hd @@ dom_neg) (Expr (IValue 6), Pinf);
+  let interv = (Expr (IValue 8), Pinf) in
+  let dom = dom @ [LA_SMT.Arrays.mk_full_subdiv a_ctx interv, interv] in
+  let dom_neg = domain_neg ([], [], a_ctx) dom in
+  assert_equal (List.length dom_neg) 1;
+  assert_equal  (snd @@ List.hd @@ dom_neg) (Expr (IValue 6), Expr (IValue 8));
+  ()
+
 
 let _ = LA_SMT.set_verbose true
 
@@ -50,8 +67,9 @@ let suite =
     "strict_comparisons" >:: test_file "strict_comparison.smt" (assert_equal "sat\ns3 = 0\ns2 = 1\ns1 = 2\n");
     "not" >:: test_file "not.smt" (assert_equal "sat\nx = 10\n");
     "multiple_cards.smt" >:: test_file "multiple_card.smt" (assert_equal "unsat\n");
+
+    "test_domain_neg" >:: test_domain_neg;
   ]
-;;
 
 
 let () =

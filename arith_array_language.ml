@@ -74,4 +74,4 @@ let bound_to_string = function
   | Expr e -> term_to_string e
 
 let interval_to_string (l, u) =
-  "(+ (- " ^ bound_to_string u ^ " " ^ bound_to_string l ^ ") 1)"
+  "(- " ^ bound_to_string u ^ " " ^ bound_to_string l ^ ")"

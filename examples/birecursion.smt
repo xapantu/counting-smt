@@ -15,4 +15,5 @@
 )))
 
 (check-sat)
+(assert (= x 10))
 (get-model)
