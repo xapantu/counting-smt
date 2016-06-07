@@ -19,10 +19,6 @@ end
 
 module LA_SMT = struct
 
-  type sort =
-    | Int
-    | Bool
-
   type _ term =
     | IValue : int -> int term
     | IVar : string * int -> int term
@@ -47,6 +43,11 @@ module LA_SMT = struct
 
   type interval = bound * bound
   type domain = interval list
+  
+  type sort =
+    | Int
+    | Bool
+    | Array of interval * sort
 
   type assignation = string * concrete_value
   type model = assignation list
@@ -100,6 +101,7 @@ module LA_SMT = struct
   let solver_command = "yices-smt2 --incremental"
   let vars = ref []
   let range = Hashtbl.create 10
+  let get_range = Hashtbl.find range
 
   let solver_in, solver_out =
     let a, b = Unix.open_process solver_command

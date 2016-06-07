@@ -119,6 +119,15 @@ let rec lisp_to_expr ?z:(z="") ctx l =
   | Lisp_string b -> Theory_expr (Bool (BVar(b, true)))
   | _ -> raise (Not_allowed (lisp_to_string l))
 
+let lisp_to_sort =
+  let open Lisp in
+  function
+  | Lisp_string "Int" -> Int
+  | Lisp_string "Bool" -> Bool
+  | Lisp_rec(Lisp_string "Array" :: Lisp_string x :: Lisp_string "Bool" :: []) ->
+    Array(LA_SMT.get_range x, Bool)
+  | e -> raise (Not_allowed_for_type (lisp_to_string e, "sort"))
+
 let rec extract_cards l =
   let open Lisp in
   match l with
@@ -136,7 +145,6 @@ let rec extract_cards l =
   | Lisp_rec (l) ->
     let l, cards = List.map extract_cards l |> List.split in
     Lisp_rec (l), List.concat cards
-
 
 let lexing stdin =
     stdin |> Lexing.from_channel
@@ -160,10 +168,8 @@ let rec runner stdout lexing_stdin cards' =
               with
               | LA_SMT.Unsat -> Printf.fprintf stdout "unsat\n"
             end
-          | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Int" :: []) ->
-            LA_SMT.use_var x Int
-          | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Bool" :: []) ->
-            LA_SMT.use_var x Bool
+          | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: sort :: []) ->
+            LA_SMT.use_var x (lisp_to_sort sort)
           | Lisp_rec (Lisp_string "declare-range" :: Lisp_string x :: Lisp_rec (a :: b :: []) :: []) ->
             let a = lisp_to_int_texpr ~z:"" (ref []) a in
             let b = lisp_to_int_texpr ~z:"" (ref []) b in
