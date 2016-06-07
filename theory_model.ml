@@ -47,7 +47,8 @@ module LA_SMT = struct
   type sort =
     | Int
     | Bool
-    | Array of interval * sort
+    | Array of sort * sort
+    | Range of interval
 
   type assignation = string * concrete_value
   type model = assignation list
@@ -127,7 +128,7 @@ module LA_SMT = struct
 
   let new_range: string -> bound -> bound -> unit =
     fun name b1 b2 ->
-      Hashtbl.add range name (b1, b2)
+      Hashtbl.add range name (Range (b1, b2))
 
   let use_var name = function
     | Int ->
@@ -136,28 +137,23 @@ module LA_SMT = struct
     | Bool ->
       let () = vars := (Bool, name) :: !vars in
       send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
-    | Array(range, Bool) as e ->
+    | Array(Range(_, _), Bool) as e ->
       vars := (e, name) :: !vars
     | _ -> failwith "Too complex array type"
 
-  let use_quantified_var name f = function
-    | Int ->
-      let () = vars := (Int, name) :: !vars in
+  let use_quantified_var name sort f =
+      let () = vars := (sort, name) :: !vars in
       let a = f () in
       let first = ref true in
       let () = vars := List.filter (fun x -> 
           if x = (Int, name) then
             if !first then
-              false
+              (first := false; false)
             else
-              (first := false; true)
+              true
           else
             true) !vars in
-      a
-    | Bool ->
-      let () = vars := (Bool, name) :: !vars in
-      let a = f () in
-      let () = vars := List.tl !vars in
+      assert (not !first);
       a
 
   let get_sort name =
@@ -256,7 +252,8 @@ module LA_SMT = struct
     List.iter (fun (b, v) ->
         match v with
         | VBool(t) ->  Printf.fprintf stdout "%s = %b\n" b t
-        | VInt(v) -> Printf.fprintf stdout "%s = %d\n" b v)
+        | VInt(v) ->
+          if(String.length b <= 5 || String.sub b 0 5 <> "card!") then Printf.fprintf stdout "%s = %d\n" b v)
       m
 
 

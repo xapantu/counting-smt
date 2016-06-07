@@ -137,10 +137,10 @@ let rec extract_cards l =
     let sort = match sort with
       | "Int" -> Int
       | "Bool" -> Bool
-      | a -> raise (Not_allowed_for_type(z, a))
+      | a -> LA_SMT.get_range a
     in
     let ctx = ref [] in
-    let formula = use_quantified_var z (fun () -> lisp_to_expr ~z ctx formula) sort in
+    let formula = use_quantified_var z sort (fun () -> lisp_to_expr ~z ctx formula) in
     Lisp_string (y), Card {var_name = y; expr = formula; quantified_var = z} :: !ctx
   | Lisp_rec (l) ->
     let l, cards = List.map extract_cards l |> List.split in
