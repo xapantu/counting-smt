@@ -60,6 +60,19 @@ module LA_SMT = struct
              |> List.map interval_to_string
              |> String.concat "+"
 
+  let bound_inf_to_string = function
+    | Ninf | Pinf -> "inf"
+    | Expr e -> term_to_string e
+
+
+  let inf_interval_to_string (l, u) =
+    "[" ^ bound_inf_to_string l ^ ", " ^ bound_inf_to_string u ^ "]"
+  
+  let domain_to_str d =
+    List.map inf_interval_to_string d
+    |> String.concat ", "
+
+
   module Formula = IFormula(struct
       type texpr = rel
       let texpr_to_smt = rel_to_smt
