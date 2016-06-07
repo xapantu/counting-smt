@@ -62,13 +62,13 @@ let rec lisp_to_int_texpr ~z ctx =
       ensure_int_expr z a; ensure_int_expr z b;
       IVar(subs, 0)
       )
-  | a -> raise (Not_allowed (lisp_to_string a))
+  | a -> raise (Not_allowed_for_type (lisp_to_string a, "int"))
 
 
 let rec (extract_quantified_var: string -> Lisp.lisp -> int * Lisp.lisp) =
   let open Lisp in
   fun z (l:Lisp.lisp) -> match l with
-  | Lisp_string(_) | Lisp_false | Lisp_true -> 0, l
+  | Lisp_string(_) | Lisp_false | Lisp_true | Lisp_int _ -> 0, l
   | Lisp_rec(Lisp_string "+" :: Lisp_string v :: b :: [] )
     when v = z->
     let n, b = extract_quantified_var z b in

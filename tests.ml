@@ -45,6 +45,7 @@ let suite =
     "test_birecursion$" >:: test_file "birecursion.smt" (assert_equal "sat\ny = 0\nx = 10\n");
     "test4" >:: test_file "test4.smt" (fun _ -> ());
     "vars" >:: test_file "vars.smt" (fun _ -> ());
+    "constants" >:: test_file "constants.smt" (assert_equal "sat\ns2 = 1\ns1 = 2\n");
   ]
 ;;
 
