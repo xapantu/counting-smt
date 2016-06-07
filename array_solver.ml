@@ -2,6 +2,8 @@
  * only bools for now *)
 module Array_solver = struct
 
+  exception Not_implemented
+
   include Arith_array_language
 
   type array = {
@@ -9,22 +11,35 @@ module Array_solver = struct
     indexes: interval;
   }
 
-  type array_subdivision
+  type array_subdivision = int
+  type domain = interval list
 
-  type array_ctx(* = string (domain list) Hashtbl.t*)
+  type array_ctx = int (* = string (domain list) Hashtbl.t*)
 
-  let new_array name indexes =
-    Hashtbl.add name { name; indexes; }
+  let new_array ctx name indexes =
+    Hashtbl.add ctx name { name; indexes; }
 
-  val new_ctx: unit -> array_ctx
+  let full_array_subdivision = 0
 
-  val equality_arrays: array_ctx -> domain list -> array -> array -> array_subdivision
+  let new_ctx () =
+    0
 
-  val equality_array: array_ctx -> domain list -> array -> array_subdivision
+  let equality_arrays: array_ctx -> domain list -> array -> array -> bool -> array_subdivision = fun _ ->
+    raise Not_implemented
 
-  val constraints_subdiv: array_ctx -> array_subdivision -> list rel
+  let equality_array: array_ctx -> domain list -> array -> bool -> array_subdivision = fun _ ->
+    raise Not_implemented
 
-  val constraints_term: array_ctx -> array_subdivision -> int term
+  let constraints_subdiv: array_ctx -> array_subdivision -> rel list = fun _ ->
+    raise Not_implemented
+
+
+  let constraints_term: array_ctx -> array_subdivision -> int term = fun _ ->
+    raise Not_implemented
+
+  let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun a b -> b
+
+  let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun _ _ -> full_array_subdivision
 
 
 end

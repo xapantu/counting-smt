@@ -22,7 +22,6 @@ type bound =
   | Expr of int term
 
 type interval = bound * bound
-type domain = interval list
 
 type sort =
   | Int
