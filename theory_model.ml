@@ -106,9 +106,16 @@ module LA_SMT = struct
       vars := (e, name) :: !vars
     | _ -> failwith "Too complex array type"
 
+
+  let constraints_on_sort sort name = match sort with
+    | Int | Bool -> Theory_expr(Bool (BValue true))
+    | Range(Expr a, Expr b) -> And(Theory_expr(Greater(b, IVar(name, 1))), Theory_expr(Greater(IVar(name, 0), a)))
+    | Range(Ninf, Expr b) -> Theory_expr(Greater(b, IVar(name, 1)))
+    | Range(Expr a, Pinf) -> Theory_expr(Greater(IVar(name, 0), a))
+
   let use_quantified_var name sort f =
       let () = vars := (sort, name) :: !vars in
-      let a = f () in
+      let a = f (constraints_on_sort sort name) in
       let first = ref true in
       let () = vars := List.filter (fun x -> 
           let (a, b) = x in
@@ -441,6 +448,9 @@ module LA_SMT = struct
         cont (model, (BEquality(a, b))::assum, actx) [array_init, (Ninf, Pinf)]
       else
         cont (model, (BEquality(not_term a, b))::assum, actx) []
+    | Bool(Array_access(tab, index, neg)) ->
+      (assert (index = IVar(var_name, 0));
+       cont ctx [Arrays.equality_array actx tab neg, (Ninf, Pinf)])
     | Bool(a) ->
       let a_val = get_val_from_model model a in
       if a_val then

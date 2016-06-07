@@ -6,7 +6,7 @@ module Array_solver = struct
 
   include Arith_array_language
 
-  type array = {
+  type my_array = {
     name: string;
     indexes: interval;
   }
@@ -24,11 +24,11 @@ module Array_solver = struct
   let new_ctx () =
     0
 
-  let equality_arrays: array_ctx -> domain list -> array -> array -> bool -> array_subdivision = fun _ ->
+  let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision = fun _ ->
     raise Not_implemented
 
-  let equality_array: array_ctx -> domain list -> array -> bool -> array_subdivision = fun _ ->
-    raise Not_implemented
+  let equality_array: array_ctx -> bool array term -> bool -> array_subdivision = fun _ _ _ ->
+    1
 
   let constraints_subdiv: array_ctx -> array_subdivision -> rel list = fun _ ->
     raise Not_implemented

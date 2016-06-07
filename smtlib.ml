@@ -155,7 +155,7 @@ let rec extract_cards l =
       | a -> LA_SMT.get_range a
     in
     let ctx = ref [] in
-    let formula = use_quantified_var z sort (fun () -> lisp_to_expr ~z ctx formula) in
+    let formula = use_quantified_var z sort (fun a -> And(a, lisp_to_expr ~z ctx formula)) in
     Lisp_string (y), Card {var_name = y; expr = formula; quantified_var = z; quantified_sort = sort; } :: !ctx
   | Lisp_rec (l) ->
     let l, cards = List.map extract_cards l |> List.split in
