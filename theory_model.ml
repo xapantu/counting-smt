@@ -25,8 +25,9 @@ module LA_SMT = struct
   exception Unbounded_interval
   exception Unsat
   exception TypeCheckingError of string
+  exception Unprintable_elements of string
 
-  let term_to_string: type a. a term -> string = function
+  let rec term_to_string: type a. a term -> string = function
     | IVar (s, 0) -> s
     | IVar (s, i) when i > 0 -> "(+ " ^ s ^ " " ^ string_of_int i ^ ")"
     | IVar (s, i) (* when i < 0 *) -> "(- " ^ s ^ " " ^ string_of_int (-i) ^ ")"
@@ -35,6 +36,19 @@ module LA_SMT = struct
     | BVar(s, true) -> s
     | BVar(s, false) -> Format.sprintf "(not %s)" s
     | IValue i -> string_of_int i
+    | Array_term e ->
+      raise (Unprintable_elements e)
+    | Array_access(tab, index, false) ->
+      Format.sprintf "(not %s)" (term_to_string (Array_access(tab, index, true)))
+    | Array_access(tab, index, true) ->
+      let tab =
+        try
+          term_to_string tab
+        with
+        | Unprintable_elements(e) -> e
+      in
+      let index = term_to_string index in
+      raise (Unprintable_elements (Format.sprintf "%s[%s]" tab index))
 
 
   let rec rel_to_smt = function
@@ -76,6 +90,7 @@ module LA_SMT = struct
   module Formula = IFormula(struct
       type texpr = rel
       let texpr_to_smt = rel_to_smt
+      type tsort = sort
     end)
 
   open Formula
@@ -103,9 +118,6 @@ module LA_SMT = struct
       Format.printf " -> %s@." s;
     output_string !solver_out "\n";
     flush !solver_out
-
-  (* let () = send_to_solver "(set-logic QF_LIA)"*)
-
 
   let new_range: string -> bound -> bound -> unit =
     fun name b1 b2 ->
@@ -160,8 +172,13 @@ module LA_SMT = struct
       | a -> raise (Unknown_answer a)
     else is_sat ()
 
+  (* true if this variable is seen by the underlying solver (such as yices). For instance,
+   * at this moment, arrays are not seen. *)
+  let var_is_raw (sort, name) =
+    sort = Int || sort = Bool
+
   let get_model () =
-    send_to_solver (Format.sprintf "(get-value (%s))" (List.map snd !vars |> String.concat " "));
+    send_to_solver @@ Format.sprintf "(get-value (%s))" (List.filter var_is_raw !vars |> List.map snd |> String.concat " ");
     let open Lisp in
     let get_var lisp =
       match lisp with
@@ -276,6 +293,7 @@ module LA_SMT = struct
   let not_term: bool term -> bool term = function
     | BValue(k) -> BValue(not k)
     | BVar(s, k) -> BVar (s, not k)
+    | Array_access(tab, index, k) -> Array_access(tab, index, not k)
 
   let get_val_from_model: type a. model -> a term -> a = fun model -> function
     | IVar(a, i) ->

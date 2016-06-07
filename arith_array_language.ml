@@ -4,7 +4,7 @@ type _ term =
   | BValue : bool -> bool term
   | BVar : string * bool -> bool term
   | Array_term : string -> bool array term
-  | Array_access : bool array term * int term -> bool term
+  | Array_access : bool array term * int term * bool (* last one is the negation *) -> bool term
 
 type concrete_value =
   | VBool of bool

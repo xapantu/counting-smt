@@ -106,7 +106,7 @@ let rec lisp_to_expr ?z:(z="") ctx l =
   | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
       Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
   | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
-    Theory_expr (Bool (Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b)))
+    Theory_expr (Bool (Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b, true)))
   | Lisp_rec(Lisp_string ">=" :: a :: b :: []) ->
     let count_quantified_a, a = extract_quantified_var z a in
     let count_quantified_b, b = extract_quantified_var z b in
@@ -156,7 +156,7 @@ let rec extract_cards l =
     in
     let ctx = ref [] in
     let formula = use_quantified_var z sort (fun () -> lisp_to_expr ~z ctx formula) in
-    Lisp_string (y), Card {var_name = y; expr = formula; quantified_var = z} :: !ctx
+    Lisp_string (y), Card {var_name = y; expr = formula; quantified_var = z; quantified_sort = sort; } :: !ctx
   | Lisp_rec (l) ->
     let l, cards = List.map extract_cards l |> List.split in
     Lisp_rec (l), List.concat cards

@@ -20,6 +20,8 @@ module Array_solver = struct
 
   val equality_arrays: array_ctx -> domain list -> array -> array -> array_subdivision
 
+  val equality_array: array_ctx -> domain list -> array -> array_subdivision
+
   val constraints_subdiv: array_ctx -> array_subdivision -> list rel
 
   val constraints_term: array_ctx -> array_subdivision -> int term

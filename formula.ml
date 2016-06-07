@@ -2,6 +2,8 @@ module type F = sig
 
   type texpr
 
+  type sort
+
   type expr =
     | And of expr * expr
     | Or of expr * expr
@@ -10,16 +12,18 @@ module type F = sig
 
   type assumptions = texpr list
 
-  type card = { var_name: string; expr: expr; quantified_var: string; }
+  type card = { var_name: string; expr: expr; quantified_var: string; quantified_sort: sort; }
 
 end
 
 module IFormula (T : sig
     type texpr
+    type tsort
     val texpr_to_smt: texpr -> string
   end) = struct
 
   type texpr = T.texpr
+  type sort = T.tsort
 
   type expr =
     | And of expr * expr
@@ -30,7 +34,7 @@ module IFormula (T : sig
 
     type assumptions = texpr list
 
-    type card = { var_name: string; expr: expr; quantified_var: string; }
+    type card = { var_name: string; expr: expr; quantified_var: string; quantified_sort: sort; }
 
     let rec expr_to_smt = function
       | And(e1, e2) -> "(and " ^ expr_to_smt e1 ^ " " ^ expr_to_smt e2 ^ ")"
