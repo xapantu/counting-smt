@@ -99,6 +99,7 @@ module LA_SMT = struct
 
   let solver_command = "yices-smt2 --incremental"
   let vars = ref []
+  let range = Hashtbl.create 10
 
   let solver_in, solver_out =
     let a, b = Unix.open_process solver_command
@@ -120,6 +121,11 @@ module LA_SMT = struct
     flush !solver_out
 
   (* let () = send_to_solver "(set-logic QF_LIA)"*)
+
+
+  let new_range: string -> bound -> bound -> unit =
+    fun name b1 b2 ->
+      Hashtbl.add range name (b1, b2)
 
   let use_var name = function
     | Int ->

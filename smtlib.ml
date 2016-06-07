@@ -38,8 +38,9 @@ let rec ensure_int_expr z =
   | Lisp_string(v) ->
     if v = z then raise Not_found
     else ensure_int v
-  | Lisp_rec(_) as e -> raise (Not_allowed_for_type(lisp_to_string e, "int"))
-  | Lisp_false | Lisp_true -> failwith "not an int expression"
+  | (Lisp_rec(_) as e)
+  | (Lisp_false as e) 
+  | (Lisp_true as e) -> raise (Not_allowed_for_type(lisp_to_string e, "int"))
 
 let rec lisp_to_int_texpr ~z ctx =
   let open Lisp in
@@ -163,6 +164,10 @@ let rec runner stdout lexing_stdin cards' =
             LA_SMT.use_var x Int
           | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: Lisp_string "Bool" :: []) ->
             LA_SMT.use_var x Bool
+          | Lisp_rec (Lisp_string "declare-range" :: Lisp_string x :: Lisp_rec (a :: b :: []) :: []) ->
+            let a = lisp_to_int_texpr ~z:"" (ref []) a in
+            let b = lisp_to_int_texpr ~z:"" (ref []) b in
+            LA_SMT.new_range x (Expr(a)) (Expr(b));
           | Lisp_rec (Lisp_string "push" :: Lisp_int 1 :: []) ->
             LA_SMT.push (fun () -> runner stdout lexing_stdin !cards)
           | Lisp_rec (Lisp_string "pop" :: Lisp_int 1 :: []) ->
