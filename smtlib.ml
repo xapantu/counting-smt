@@ -115,6 +115,12 @@ let rec lisp_to_expr ?z:(z="") ctx l =
     else if total_count = -1 then
       lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec (Lisp_string "-" :: a :: b :: [])) :: Lisp_string z :: [])
     else failwith "non unit coefficient in front of the quantified"
+  | Lisp_rec(Lisp_string ">" :: a :: b :: []) ->
+    lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec(Lisp_string "+" :: Lisp_int 1 :: a :: [])) :: b :: [])
+  | Lisp_rec(Lisp_string "<" :: a :: b :: []) ->
+    lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">" :: b :: a :: []))
+  | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
+    lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">=" :: b :: a :: []))
   | Lisp_rec(Lisp_string "=" :: a :: b :: []) -> Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
   | Lisp_true -> Theory_expr (Bool (BValue true))
   | Lisp_false -> Theory_expr (Bool (BValue false))

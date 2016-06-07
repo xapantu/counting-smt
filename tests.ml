@@ -41,6 +41,7 @@ let suite =
     "test_sum" >:: test_file "test_sum.smt" (assert_equal "unsat\n");
     "test_shadowing" >:: test_file "shadowing.smt" (assert_equal "sat\ny = 1\nx = 1\n");
     "test_arrays" >:: test_file "test_arrays.smt" (fun _ -> ());
+    "test_lower" >:: test_file "test_lower.smt" (assert_equal "sat\ny = 0\nx = 1\n");
   ]
 ;;
 

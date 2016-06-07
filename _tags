@@ -1,2 +1,2 @@
 true: use_menhir, package(unix)
-<tests*>: package(ounit)
+<tests*>: package(oUnit)

@@ -229,9 +229,15 @@ module LA_SMT = struct
 
   let implies_card assumptions str domain =
     "(=> " ^
-    assumptions_to_smt assumptions ^ " (= " ^
-    str ^ " " ^ domain_cardinality domain ^ "))"
-    |> assert_formula
+    assumptions_to_smt assumptions ^
+    begin
+    try
+      " (= " ^
+      str ^ " " ^ domain_cardinality domain ^ "))"
+    with
+    | Unbounded_interval -> " false)"
+    end
+      |> assert_formula
 
 
   let solve_assuming assumptions cont =
