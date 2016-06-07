@@ -19,40 +19,7 @@ end
 
 module LA_SMT = struct
 
-  type _ term =
-    | IValue : int -> int term
-    | IVar : string * int -> int term
-    | BValue : bool -> bool term
-    | BVar : string * bool -> bool term
-    | Array_term : string -> bool array term
-    | Array_access : bool array term * int term -> bool term
-
-  type concrete_value =
-    | VBool of bool
-    | VInt of int
-
-  type rel =
-    | Greater of int term * int term
-    | IEquality of int term * int term
-    | BEquality of bool term * bool term
-    | Bool of bool term
-
-  type bound =
-    | Ninf
-    | Pinf
-    | Expr of int term
-
-  type interval = bound * bound
-  type domain = interval list
-  
-  type sort =
-    | Int
-    | Bool
-    | Array of sort * sort
-    | Range of interval
-
-  type assignation = string * concrete_value
-  type model = assignation list
+  include Arith_array_language
 
   exception Unknown_answer of string
   exception Unbounded_interval
@@ -205,7 +172,7 @@ module LA_SMT = struct
           List.map get_var l
         with
         | Unknown_answer (a) ->
-          raise (Unknown_answer ("couldn't understand \"" ^ lisp_to_string lisp ^ "\" and more specifically:\n" ^ a))
+          raise (Unknown_answer ("couldn't understand \n\t" ^ lisp_to_string lisp ^ "\n and more specifically:\n" ^ a))
       end
     | _ -> raise (Unknown_answer ("couldn't understand root "))
 
