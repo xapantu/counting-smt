@@ -84,7 +84,7 @@ let rec (extract_quantified_var: string -> Lisp.lisp -> int * Lisp.lisp) =
   | Lisp_rec(Lisp_string "-" :: Lisp_string v :: b :: [] )
     when v = z ->
     let n, b = extract_quantified_var z b in
-    1-n, b
+    1-n, Lisp_rec (Lisp_string "-" :: Lisp_int 0 :: b :: [])
   | Lisp_rec(Lisp_string "-" :: a :: b :: [] ) ->
     let na, a = extract_quantified_var z a in
     let nb, b = extract_quantified_var z b in
@@ -103,10 +103,10 @@ let rec lisp_to_expr ?z:(z="") ctx l =
   | Lisp_rec(Lisp_string "and" :: a :: q) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "and" :: q)))
   | Lisp_rec(Lisp_string "or" :: a :: b :: []) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
   | Lisp_rec(Lisp_string "or" :: a :: q) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
-  | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
-      Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
   | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
     Theory_expr (Bool (Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b, true)))
+  | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
+      Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
   | Lisp_rec(Lisp_string ">=" :: a :: b :: []) ->
     let count_quantified_a, a = extract_quantified_var z a in
     let count_quantified_b, b = extract_quantified_var z b in

@@ -47,7 +47,8 @@ module LA_SMT = struct
     "[" ^ bound_inf_to_string l ^ ", " ^ bound_inf_to_string u ^ "]"
   
   let domain_to_str d =
-    List.map inf_interval_to_string d
+    List.map snd d
+    |> List.map inf_interval_to_string
     |> String.concat ", "
 
 
