@@ -99,6 +99,7 @@ let rec lisp_to_expr ?z:(z="") ctx l =
   let open Lisp in
   match l with
   | Lisp_rec(Lisp_string "and" :: a :: b :: []) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
+  | Lisp_rec(Lisp_string "not" :: a :: []) -> Not (lisp_to_expr ~z ctx a)
   | Lisp_rec(Lisp_string "and" :: a :: q) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "and" :: q)))
   | Lisp_rec(Lisp_string "or" :: a :: b :: []) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
   | Lisp_rec(Lisp_string "or" :: a :: q) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
