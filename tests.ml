@@ -46,6 +46,7 @@ let suite =
     "test4" >:: test_file "test4.smt" (fun _ -> ());
     "vars" >:: test_file "vars.smt" (fun _ -> ());
     "constants" >:: test_file "constants.smt" (assert_equal "sat\ns2 = 1\ns1 = 2\n");
+    "novals" >:: test_file "novars.smt" (assert_equal "sat\n");
   ]
 ;;
 

@@ -19,7 +19,7 @@ module Array_solver = struct
   let new_array ctx name indexes =
     Hashtbl.add ctx name { name; indexes; }
 
-  let full_array_subdivision = 0
+  let full_array_subdivision = 1
 
   let new_ctx () =
     0
@@ -37,9 +37,16 @@ module Array_solver = struct
   let constraints_term: array_ctx -> array_subdivision -> int term = fun _ ->
     raise Not_implemented
 
-  let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun a b -> b
+  let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun a b -> -b
 
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun _ _ -> full_array_subdivision
+  
+  let array_sub_to_string: array_ctx -> array_subdivision -> interval -> string =
+    fun ctx sub interval ->
+      if sub > 0 then
+        interval_to_string interval
+      else
+        "0"
 
 
 end

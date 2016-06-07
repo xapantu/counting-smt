@@ -21,10 +21,8 @@ module LA_SMT = struct
   include Arith_array_language
 
   exception Unknown_answer of string
-  exception Unbounded_interval
   exception Unsat
   exception TypeCheckingError of string
-  exception Unprintable_elements of string
 
   module Arrays = Array_solver.Array_solver
 
@@ -33,53 +31,12 @@ module LA_SMT = struct
 
   type domain = arrayed_domain
 
-  let rec term_to_string: type a. a term -> string = function
-    | IVar (s, 0) -> s
-    | IVar (s, i) when i > 0 -> "(+ " ^ s ^ " " ^ string_of_int i ^ ")"
-    | IVar (s, i) (* when i < 0 *) -> "(- " ^ s ^ " " ^ string_of_int (-i) ^ ")"
-    | BValue(false) -> "false"
-    | BValue(true) -> "true"
-    | BVar(s, true) -> s
-    | BVar(s, false) -> Format.sprintf "(not %s)" s
-    | IValue i -> string_of_int i
-    | Array_term e ->
-      raise (Unprintable_elements e)
-    | Array_access(tab, index, false) ->
-      Format.sprintf "(not %s)" (term_to_string (Array_access(tab, index, true)))
-    | Array_access(tab, index, true) ->
-      let tab =
-        try
-          term_to_string tab
-        with
-        | Unprintable_elements(e) -> e
-      in
-      let index = term_to_string index in
-      raise (Unprintable_elements (Format.sprintf "%s[%s]" tab index))
-
-
-  let rec rel_to_smt = function
-    | Greater(e1, e2) ->
-      "(>= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
-    | IEquality(e1, e2) ->
-      "(= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
-    | BEquality(e1, e2) ->
-      "(= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
-    | Bool(b) ->
-      term_to_string b
-
-  let bound_to_string = function
-    | Ninf | Pinf -> raise Unbounded_interval
-    | Expr e -> term_to_string e
-
-  let interval_to_string (l, u) =
-    "(+ (- " ^ bound_to_string u ^ " " ^ bound_to_string l ^ ") 1)"
-
   let domain_cardinality = function
     | [] -> "0"
     | dom -> dom
              |> List.map snd
              |> List.map interval_to_string
-             |> String.concat "+"
+             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
 
   let bound_inf_to_string = function
     | Ninf | Pinf -> "inf"
@@ -113,11 +70,14 @@ module LA_SMT = struct
     let a, b = Unix.open_process solver_command
     in ref a, ref b
 
+
+  let my_array_ctx = ref (Arrays.new_ctx ())
+
   let reset_solver () =
     close_in !solver_in; close_out !solver_out;
     let a, b = Unix.open_process solver_command
     in solver_in := a; solver_out := b; vars := [];
-    Hashtbl.reset range
+    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx ()
 
   let verbose = ref false
   let set_verbose s = verbose := s
@@ -490,6 +450,6 @@ module LA_SMT = struct
             )
         | Theory_expr(e) -> make_domain_from_expr var_name a e cont
     in
-    expr_to_domain_cps (model, [], Arrays.new_ctx ()) expr (fun (_, a, _) d -> d, a)
+    expr_to_domain_cps (model, [], !my_array_ctx) expr (fun (_, a, _) d -> d, a)
 
 end

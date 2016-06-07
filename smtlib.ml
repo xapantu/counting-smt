@@ -117,7 +117,7 @@ let rec lisp_to_expr ?z:(z="") ctx l =
       lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec (Lisp_string "-" :: a :: b :: [])) :: Lisp_string z :: [])
     else failwith "non unit coefficient in front of the quantified"
   | Lisp_rec(Lisp_string ">" :: a :: b :: []) ->
-    lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec(Lisp_string "+" :: Lisp_int 1 :: a :: [])) :: b :: [])
+    lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec(Lisp_string "-" :: a :: Lisp_int 1 :: [])) :: b :: [])
   | Lisp_rec(Lisp_string "<" :: a :: b :: []) ->
     lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">" :: b :: a :: []))
   | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
