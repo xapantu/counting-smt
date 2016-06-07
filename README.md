@@ -10,7 +10,7 @@ Compile
 make
 ```
 
-This requires a recent ocaml, ocamlfind and ocamlbuild, preferably installed via opam.
+This requires a recent ocaml, ocamlfind, ounit and ocamlbuild, preferably installed via opam.
 
 Tests
 =====
