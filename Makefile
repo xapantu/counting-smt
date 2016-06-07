@@ -8,4 +8,4 @@ tests: all
 	./tests.native -runner sequential
 
 clean:
-	rm -r _build solver.native tests.native
+	rm -rf _build solver.native tests.native

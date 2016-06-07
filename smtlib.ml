@@ -38,6 +38,8 @@ let rec ensure_int_expr z =
   | Lisp_string(v) ->
     if v = z then raise Not_found
     else ensure_int v
+  | Lisp_rec(_) as e -> raise (Not_allowed_for_type(lisp_to_string e, "int"))
+  | Lisp_false | Lisp_true -> failwith "not an int expression"
 
 let rec lisp_to_int_texpr ~z ctx =
   let open Lisp in
