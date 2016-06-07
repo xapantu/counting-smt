@@ -49,6 +49,7 @@ let suite =
     "novals" >:: test_file "novars.smt" (assert_equal "sat\n");
     "strict_comparisons" >:: test_file "strict_comparison.smt" (assert_equal "sat\ns3 = 0\ns2 = 1\ns1 = 2\n");
     "not" >:: test_file "not.smt" (assert_equal "sat\nx = 10\n");
+    "multiple_cards.smt" >:: test_file "multiple_card.smt" (assert_equal "unsat\n");
   ]
 ;;
 

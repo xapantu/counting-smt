@@ -1,0 +1,5 @@
+(set-logic QF_LIA)
+(declare-fun x () Int)
+(assert (= x (# u Int (not ( or (<= u 0) (> u 10))))))
+(check-sat)
+(get-model)
