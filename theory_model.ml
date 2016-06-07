@@ -24,7 +24,8 @@ module LA_SMT = struct
     | IVar : string * int -> int term
     | BValue : bool -> bool term
     | BVar : string * bool -> bool term
-    | Array_term : int term * int term * string -> bool array term (* index, array length, array name *)
+    | Array_term : string -> bool array term
+    | Array_access : bool array term * int term -> bool term
 
   type concrete_value =
     | VBool of bool
@@ -146,7 +147,8 @@ module LA_SMT = struct
       let a = f () in
       let first = ref true in
       let () = vars := List.filter (fun x -> 
-          if x = (Int, name) then
+          let (a, b) = x in
+          if b = name then
             if !first then
               (first := false; false)
             else
@@ -160,8 +162,9 @@ module LA_SMT = struct
     fst @@ List.find (fun (s, n) -> name = n) !vars
 
   let ensure_int name =
-    if get_sort name = Int then ()
-    else raise (TypeCheckingError name)
+    match get_sort name with
+    | Int | Range(_) -> ()
+    | _ -> raise (TypeCheckingError name)
 
   let ensure_bool name =
     if get_sort name = Bool then ()
