@@ -1,0 +1,7 @@
+(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(assert (and (>= x y) (>= x 0) (= y (# x Int (and (>= y x) (>= x y))))))
+(assert (= x 1))
+(check-sat)
+(get-model)
