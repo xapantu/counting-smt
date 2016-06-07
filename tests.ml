@@ -43,6 +43,7 @@ let suite =
     "test_arrays" >:: test_file "test_arrays.smt" (fun _ -> ());
     "test_lower" >:: test_file "test_lower.smt" (assert_equal "sat\ny = 0\nx = 1\n");
     "test_birecursion$" >:: test_file "birecursion.smt" (assert_equal "sat\ny = 0\nx = 10\n");
+    "test4" >:: test_file "test4.smt" (fun _ -> ());
   ]
 ;;
 
