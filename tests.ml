@@ -25,20 +25,20 @@ let test_file filename expected_result  _ =
   let _ = runner output_channel (lexing input) [] in
   flush output_channel;
   let res = read_not_blocking result_descr result_channel in
-  assert_equal res expected_result
+  expected_result res
 
 
 let _ = LA_SMT.set_verbose true
 
 let suite =
 
-  "suite">:::
+  "suite" >:::
   [
-    "test1" >:: test_file "test1.smt" "sat\ncard!1 = 2\ny = 2\nx = 3\n";
-    "test2" >:: test_file "test2.smt" "unsat\n";
-    "test3" >:: test_file "test3.smt" "sat\n";
-    "test_quant_sum" >:: test_file "test_quant_sum.smt" "unsat\n";
-    "test_sum" >:: test_file "test_sum.smt" "unsat\n";
+    "test1" >:: test_file "test1.smt" (assert_equal "sat\ncard!1 = 2\ny = 2\nx = 3\n");
+    "test2" >:: test_file "test2.smt" (assert_equal "unsat\n");
+    "test3" >:: test_file "test3.smt" (assert_equal "sat\n");
+    "test_quant_sum" >:: test_file "test_quant_sum.smt" (assert_equal "unsat\n");
+    "test_sum" >:: test_file "test_sum.smt" (assert_equal "unsat\n");
   ]
 ;;
 

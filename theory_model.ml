@@ -28,6 +28,7 @@ module LA_SMT = struct
     | IVar : string * int -> int term
     | BValue : bool -> bool term
     | BVar : string * bool -> bool term
+    | Array_term : int term * int term * string -> bool array term (* index, array length, array name *)
 
   type concrete_value =
     | VBool of bool
