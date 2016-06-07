@@ -39,6 +39,7 @@ let suite =
     "test3" >:: test_file "test3.smt" (assert_equal "sat\n");
     "test_quant_sum" >:: test_file "test_quant_sum.smt" (assert_equal "unsat\n");
     "test_sum" >:: test_file "test_sum.smt" (assert_equal "unsat\n");
+    "test_arrays" >:: test_file "test_arrays.smt" (fun _ -> ());
   ]
 ;;
 
