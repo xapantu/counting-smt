@@ -31,13 +31,6 @@ module LA_SMT = struct
 
   type domain = arrayed_domain
 
-  let domain_cardinality = function
-    | [] -> "0"
-    | dom -> dom
-             |> List.map snd
-             |> List.map interval_to_string
-             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
-
   let bound_inf_to_string = function
     | Ninf | Pinf -> "inf"
     | Expr e -> term_to_string e
@@ -47,8 +40,9 @@ module LA_SMT = struct
     "[" ^ bound_inf_to_string l ^ ", " ^ bound_inf_to_string u ^ "]"
   
   let domain_to_str d =
-    List.map snd d
-    |> List.map inf_interval_to_string
+    d
+    |> List.map (fun (s, i) ->
+         (string_of_int s) ^ " " ^ (inf_interval_to_string i))
     |> String.concat ", "
 
 
@@ -73,6 +67,13 @@ module LA_SMT = struct
 
 
   let my_array_ctx = ref (Arrays.new_ctx ())
+
+  let domain_cardinality = function
+    | [] -> "0"
+    | dom -> dom
+             |> List.map (fun (s, i) ->
+                 Arrays.array_sub_to_string !my_array_ctx s i)
+             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
 
   let reset_solver () =
     close_in !solver_in; close_out !solver_out;
@@ -289,22 +290,27 @@ module LA_SMT = struct
   let array_ctx (_, _, ctx) =
     ctx
 
+  (* ok, this could be rewritten *)
   let domain_neg ctx d =
     let ctx = array_ctx ctx in
     let rec domain_neg_aux old_bound dom =
       match dom with
       | (arrays, interv) :: q ->
-        let arrays = Arrays.array_sub_neg ctx arrays in
-        (*(arrays, interv) ::*)
         begin
           match interv with
           | (Ninf, Expr a) -> domain_neg_aux (Expr  (plus_one a)) q
           | (Expr a, Pinf) ->
-            let interv = (old_bound, Expr (minus_one a)) in
-            [Arrays.mk_full_subdiv ctx interv, interv]
+            if Expr a = old_bound then
+              []
+            else
+              let interv = (old_bound, Expr (minus_one a)) in
+              [Arrays.mk_full_subdiv ctx interv, interv]
           | (Expr a, Expr b) ->
-            let interv = (old_bound, Expr (minus_one a)) in
-            (Arrays.mk_full_subdiv ctx interv, interv) :: domain_neg_aux (Expr (plus_one b)) q
+            if Expr a = old_bound then
+              domain_neg_aux (Expr (plus_one b)) q
+            else
+              let interv = (old_bound, Expr (minus_one a)) in
+              (Arrays.mk_full_subdiv ctx interv, interv) :: domain_neg_aux (Expr (plus_one b)) q
           | (Pinf, _) | (_, Ninf) -> raise Bad_interval
           | (Ninf, Pinf) -> []
         end
@@ -313,7 +319,20 @@ module LA_SMT = struct
         let interv = (old_bound, Pinf) in
         [Arrays.mk_full_subdiv ctx interv, interv]
     in
-    domain_neg_aux Ninf d
+    let dneg = domain_neg_aux Ninf d
+    in
+    if d = [] then dneg
+    else
+      let rec one_on_one l1 = function
+        | t :: q ->t :: (one_on_one q l1)
+        | [] -> l1 in
+      let fin =
+        let d = List.map (fun (l, i) -> Arrays.array_sub_neg ctx l, i) d in
+        match List.hd d with
+        | (_, (Ninf, _)) -> one_on_one dneg d
+        | _ -> one_on_one d dneg
+      in 
+      fin
 
 
   let rec interval_domain_inter (model, a, array_ctx) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) (cont: 'a -> arrayed_domain -> 'c) : 'c =
@@ -352,21 +371,22 @@ module LA_SMT = struct
     let rec extract_inter = function
       | [] -> []
       | (arrays, (l, u))::q ->
+        let intersect_arrays = Arrays.array_sub_intersect array_ctx arr arrays in
         if greater l u1 then
           if equal l u1 then
-            [arrays, (l, u1)]
+            [intersect_arrays, (l, u1)]
           else
             []
         else if greater l l1 then
           if greater u u1 then
-            (arrays, (l, u1))::extract_inter q
+            (intersect_arrays, (l, u1))::extract_inter q
           else
-            (arrays, (l, u))::extract_inter q
+            (intersect_arrays, (l, u))::extract_inter q
         else if greater u l1 then
           if greater u u1 then
-            (arrays, (l1, u1))::extract_inter q
+            (intersect_arrays, (l1, u1))::extract_inter q
           else
-            (arrays, (l1, u))::extract_inter q
+            (intersect_arrays, (l1, u))::extract_inter q
         else
           extract_inter q
     in

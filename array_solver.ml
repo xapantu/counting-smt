@@ -37,6 +37,9 @@ module Array_solver = struct
   let constraints_term: array_ctx -> array_subdivision -> int term = fun _ ->
     raise Not_implemented
 
+  let array_sub_intersect: array_ctx -> array_subdivision -> array_subdivision -> array_subdivision = fun _ a b ->
+    if a + b < 1 then -1 else 1
+
   let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun a b -> -b
 
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun _ _ -> full_array_subdivision

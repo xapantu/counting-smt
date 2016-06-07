@@ -48,6 +48,7 @@ let suite =
     "constants" >:: test_file "constants.smt" (assert_equal "sat\ns2 = 1\ns1 = 2\n");
     "novals" >:: test_file "novars.smt" (assert_equal "sat\n");
     "strict_comparisons" >:: test_file "strict_comparison.smt" (assert_equal "sat\ns3 = 0\ns2 = 1\ns1 = 2\n");
+    "not" >:: test_file "not.smt" (assert_equal "sat\nx = 10\n");
   ]
 ;;
 
