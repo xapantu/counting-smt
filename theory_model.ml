@@ -334,7 +334,7 @@ module LA_SMT = struct
       match dom with
       | (arrays, interv) :: q ->
         let arrays = Arrays.array_sub_neg ctx arrays in
-        (arrays, interv) ::
+        (*(arrays, interv) ::*)
         begin
           match interv with
           | (Ninf, Expr a) -> domain_neg_aux (Expr  (plus_one a)) q
