@@ -136,6 +136,9 @@ module LA_SMT = struct
     | Bool ->
       let () = vars := (Bool, name) :: !vars in
       send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
+    | Array(range, Bool) as e ->
+      vars := (e, name) :: !vars
+    | _ -> failwith "Too complex array type"
 
   let use_quantified_var name f = function
     | Int ->
