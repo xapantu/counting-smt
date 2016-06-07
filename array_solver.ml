@@ -11,24 +11,27 @@ module Array_solver = struct
     indexes: interval;
   }
 
-  type array_subdivision = int
+  type array_subdivision =
+    | Div of (string * bool) list list
+    | Bottom
   type domain = interval list
 
-  type array_ctx = int (* = string (domain list) Hashtbl.t*)
+  type array_ctx = (string, my_array) Hashtbl.t
 
   let new_array ctx name indexes =
     Hashtbl.add ctx name { name; indexes; }
 
-  let full_array_subdivision = 1
+  let full_array_subdivision = Div []
 
   let new_ctx () =
-    0
+    Hashtbl.create 10
 
   let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision = fun _ ->
     raise Not_implemented
 
-  let equality_array: array_ctx -> bool array term -> bool -> array_subdivision = fun _ _ _ ->
-    1
+  let equality_array: array_ctx -> bool array term -> bool -> array_subdivision = fun ctx t value ->
+    let Array_term(name) = t in
+    Div [[name, value]]
 
   let constraints_subdiv: array_ctx -> array_subdivision -> rel list = fun _ ->
     raise Not_implemented
@@ -38,18 +41,18 @@ module Array_solver = struct
     raise Not_implemented
 
   let array_sub_intersect: array_ctx -> array_subdivision -> array_subdivision -> array_subdivision = fun _ a b ->
-    if a + b < 1 then -1 else 1
+    Bottom
 
-  let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun a b -> -b
+  let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun a b -> Bottom
 
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun _ _ -> full_array_subdivision
   
   let array_sub_to_string: array_ctx -> array_subdivision -> interval -> string =
     fun ctx sub interval ->
-      if sub > 0 then
+      (*if sub <> Bottom then*)
         interval_to_string interval
-      else
-        "0"
+      (*else
+        "0"*)
 
 
 end

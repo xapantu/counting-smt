@@ -42,7 +42,7 @@ module LA_SMT = struct
   let domain_to_str d =
     d
     |> List.map (fun (s, i) ->
-         (string_of_int s) ^ " " ^ (inf_interval_to_string i))
+         (inf_interval_to_string i))
     |> String.concat ", "
 
 
@@ -328,7 +328,8 @@ module LA_SMT = struct
     in
     let dneg = domain_neg_aux Ninf d
     in
-    if d = [] then dneg
+    dneg
+    (*if d = [] then dneg
     else
       let rec one_on_one l1 = function
         | t :: q ->t :: (one_on_one q l1)
@@ -339,7 +340,7 @@ module LA_SMT = struct
         | (_, (Ninf, _)) -> one_on_one dneg d
         | _ -> one_on_one d dneg
       in 
-      fin
+      fin*)
 
 
   let rec interval_domain_inter (model, a, array_ctx) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) (cont: 'a -> arrayed_domain -> 'c) : 'c =
