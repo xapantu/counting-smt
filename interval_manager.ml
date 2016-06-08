@@ -5,20 +5,13 @@ include Arith_array_language
 exception Bad_interval
 
 type constraints = Array_solver.array_subdivision
-type arrayed_interval = Array_solver.array_subdivision * interval
-type arrayed_domain = arrayed_interval list
+type constrained_interval = Array_solver.array_subdivision * interval
+type constrained_domain = constrained_interval list
 
 
 class interval_manager = object(this)
-  val array_ctx : Array_solver.array_ctx option = None
 
   val mutable assumptions : rel list  = []
-
-
-  method unwrap_ctx =
-    match array_ctx with
-    | None -> failwith "uninitialized"
-    | Some s -> s
 
   method assume a =
     assumptions <- a :: assumptions
@@ -68,7 +61,12 @@ class interval_manager = object(this)
       fin
       |> List.filter (fun (l, i) -> is_sat_constraints l)
 
-  method interval_domain_inter oracle_compare (oracle_bool:bool term -> bool term -> bool) (intersect_constraints: constraints -> constraints -> constraints) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) =
+  method interval_domain_inter
+      (oracle_compare: int term -> int term -> int)
+      (oracle_bool:bool term -> bool term -> bool)
+      (intersect_constraints: constraints -> constraints -> constraints)
+      ((arr, (l1, u1)): constrained_interval)
+      (d2:constrained_domain) =
     (* >= *)
     let greater a b =
       match a, b with

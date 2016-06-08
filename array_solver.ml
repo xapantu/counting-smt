@@ -11,14 +11,14 @@ module Array_solver = struct
     indexes: interval;
   }
 
-  type equality_type =
-    | ArrayValue of string * bool
-    | ArrayArray of bool * bool
-
   type array_subdivision =
-    | Div of (equality_type list list) * interval
+    | ArrayValue of string * bool
+    | ArrayArray of string * string * bool
+    | EAnd of equality_type * equality_type
+    | EOr of equality_type * equality_type
+    | True
     | Bottom
-
+  
   type domain = interval list
 
   type array_ctx = (string, my_array) Hashtbl.t
@@ -36,7 +36,7 @@ module Array_solver = struct
 
   let equality_array: array_ctx -> bool array term -> bool -> array_subdivision = fun ctx t value ->
     let Array_term(name) = t in
-    Div ([[ArrayValue(name, value)]], (Ninf, Pinf))
+    ArrayValue (name, value)
 
   let constraints_subdiv: array_ctx -> array_subdivision -> rel list = fun _ ->
     raise Not_implemented
@@ -45,18 +45,36 @@ module Array_solver = struct
     raise Not_implemented
 
   let array_sub_intersect: array_ctx -> array_subdivision -> array_subdivision -> array_subdivision = fun _ a b ->
-    a
+    EAnd(a, b)
 
-  let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun a b -> Bottom
+  let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision =
+    fun a ->
+      let rec aux = function
+        | ArrayValue (n, t) -> ArrayValue (n, not t)
+        | ArrayArray (n, m, t) -> ArrayValue (n, m, not t)
+        | EAnd(a, b) -> EOr (aux a, aux b)
+        | EOr(a, b) -> EAnd(aux a, aux b)
+        | True -> Bottom
+        | Bottom -> faulwith "neg of bottom"
+      in aux
 
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun a b ->
-    full_array_subdivision
+    True
 
-  let array_sub_to_string: array_ctx -> array_subdivision -> interval -> string =
-    (fun ctx sub interval ->
+  let array_sub_to_string: array_ctx -> (unit -> string) -> ((array_subdivision, string) Hashtbl.t) -> array_subdivision -> interval -> string =
+    fun ctx fresh_var htbl sub interval ->
        (assert (sub <> Bottom);
+        let n =
+          try
+            Hashtbl.find htbl sub
+          with
+          | Not_found ->
+            (let y = fresh_var () in
+             Hashtbl.add htbl sub y;
+             y)
+        in
         interval_to_string interval)
-    )
+    
 
 
 end
