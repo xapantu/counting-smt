@@ -47,6 +47,15 @@ module Array_solver = struct
   let array_sub_intersect: array_ctx -> array_subdivision -> array_subdivision -> array_subdivision = fun _ a b ->
     EAnd(a, b)
 
+  let rec array_sub_to_dnf = function
+    | EAnd(a, b) ->
+      let a = array_sub_to_dnf a in
+      let b = array_sub_to_dnf b in
+      List.map (fun l ->
+          List.map (fun k ->
+              l @ k) b
+        ) |> List.concat
+
   let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision =
     fun a ->
       let rec aux = function
