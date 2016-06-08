@@ -54,8 +54,6 @@ module LA_SMT = struct
 
   open Formula
 
-  module Interval_manager = Interval_manager.Interval_manager(struct type t = Formula.texpr end)
-  
   type context = model * Interval_manager.interval_manager * Arrays.array_ctx
 
   let solver_command = "yices-smt2 --incremental"
@@ -258,24 +256,6 @@ module LA_SMT = struct
 
 
 
-  let (plus_one: int term -> int term) = function
-    | IVar(a, i) -> IVar(a, i + 1)
-    | IValue(i) -> IValue (i + 1)
-
-  let (minus_one: int term -> int term) = function
-    | IVar(a, i) -> IVar(a, i - 1)
-    | IValue(i) -> IValue (i - 1)
-
-
-  let minus:int -> int term -> int term = fun n -> function
-    | IVar(a, i) -> IVar(a, i - n)
-    | IValue(i) -> IValue (i - n)
-
-  let not_term: bool term -> bool term = function
-    | BValue(k) -> BValue(not k)
-    | BVar(s, k) -> BVar (s, not k)
-    | Array_access(tab, index, k) -> Array_access(tab, index, not k)
-
   let get_val_from_model: type a. model -> a term -> a = fun model -> function
     | IVar(a, i) ->
       begin
@@ -299,72 +279,12 @@ module LA_SMT = struct
   let array_ctx (_, _, ctx) =
     ctx
 
-  (* ok, this could be rewritten *)
-
-  let rec interval_domain_inter (model, a, array_ctx) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) =
-    let assume = a#assume
-    in
-    (* >= *)
-    let greater a b =
-      match a, b with
-      | _, Ninf -> true
-      | Ninf, _ -> false
-      | Pinf, _  -> true
-      | _, Pinf  -> false
-      | Expr a, Expr b ->
-        let a_val, b_val = get_val_from_model model a, get_val_from_model model b in
-        if a_val >= b_val then
-          (assume (Greater(a, b)); true)
-        else
-          (assume (Greater(b, plus_one a)); false)
-    in
-    let equal a b =
-      match a, b with
-      | Ninf, Ninf -> true
-      | Pinf, Pinf -> true
-      | Expr a, Expr b ->
-        let a_val, b_val = get_val_from_model model a, get_val_from_model model b in
-        if a_val = b_val then
-          (assume (IEquality(a, b)); true)
-        else if a_val > b_val then
-          (assume (Greater(a, plus_one b)); false)
-        else
-          (assume (Greater(b, plus_one a)); false)
-      | _ -> false
-    in
-    let rec extract_inter = function
-      | [] -> []
-      | (arrays, (l, u))::q ->
-        let intersect_arrays = Arrays.array_sub_intersect array_ctx arr arrays in
-        if greater l u1 then
-          if equal l u1 then
-            [intersect_arrays, (l, u1)]
-          else
-            []
-        else if greater l l1 then
-          if greater u u1 then
-            (intersect_arrays, (l, u1))::extract_inter q
-          else
-            (intersect_arrays, (l, u))::extract_inter q
-        else if greater u l1 then
-          if greater u u1 then
-            (intersect_arrays, (l1, u1))::extract_inter q
-          else
-            (intersect_arrays, (l1, u))::extract_inter q
-        else
-          extract_inter q
-    in
-    (model, a, array_ctx), extract_inter d2
-
-
-
-  let rec make_domain_intersection (a:context) (d1:arrayed_domain) (d2:arrayed_domain) =
-    match d1 with
-    | [] -> a, []
-    | t1::q1 ->
-      let a, dt1 = interval_domain_inter a t1 d2 in
-      let a, dq1 = make_domain_intersection a q1 d2 in
-      a, (dt1 @ dq1)
+  let rec make_domain_intersection (m, i, c:context) (d1:arrayed_domain) (d2:arrayed_domain) =
+    (m, i, c), i#make_domain_intersection (fun a b ->
+        compare (get_val_from_model m a) (get_val_from_model m b))
+      (fun a b -> 
+         (get_val_from_model m a) = (get_val_from_model m b)) 
+      (Arrays.array_sub_intersect c) d1 d2
 
   let domain_neg a d =
     let c = array_ctx a in

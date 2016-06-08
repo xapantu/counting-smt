@@ -75,3 +75,22 @@ let bound_to_string = function
 
 let interval_to_string (l, u) =
   "(- " ^ bound_to_string u ^ " " ^ bound_to_string l ^ ")"
+
+let (plus_one: int term -> int term) = function
+  | IVar(a, i) -> IVar(a, i + 1)
+  | IValue(i) -> IValue (i + 1)
+
+let (minus_one: int term -> int term) = function
+  | IVar(a, i) -> IVar(a, i - 1)
+  | IValue(i) -> IValue (i - 1)
+
+
+let minus:int -> int term -> int term = fun n -> function
+  | IVar(a, i) -> IVar(a, i - n)
+  | IValue(i) -> IValue (i - n)
+
+let not_term: bool term -> bool term = function
+  | BValue(k) -> BValue(not k)
+  | BVar(s, k) -> BVar (s, not k)
+  | Array_access(tab, index, k) -> Array_access(tab, index, not k)
+
