@@ -53,8 +53,10 @@ module LA_SMT = struct
     end)
 
   open Formula
+
+  module Interval_manager = Interval_manager.Interval_manager(struct type t = Formula.texpr end)
   
-  type context = model * assumptions * Arrays.array_ctx
+  type context = model * Interval_manager.interval_manager * Arrays.array_ctx
 
   let solver_command = "yices-smt2 --incremental"
   let vars = ref []
@@ -300,9 +302,7 @@ module LA_SMT = struct
   (* ok, this could be rewritten *)
 
   let rec interval_domain_inter (model, a, array_ctx) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) =
-    let assum = ref a in
-    let assume l =
-      assum := l::!assum
+    let assume = a#assume
     in
     (* >= *)
     let greater a b =
@@ -354,7 +354,7 @@ module LA_SMT = struct
         else
           extract_inter q
     in
-    (model, !assum, array_ctx), extract_inter d2
+    (model, a, array_ctx), extract_inter d2
 
 
 
@@ -388,52 +388,79 @@ module LA_SMT = struct
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in
       if a_val >= b_val then
-        (model, (Greater(a, b))::assum, actx), [array_init, (Ninf, Pinf)]
+        begin
+          assum#assume (Greater(a, b));
+          ctx, [array_init, (Ninf, Pinf)]
+        end
       else
-        (model, (Greater(b, plus_one a))::assum, actx), []
+        begin
+          assum#assume (Greater(b, plus_one b));
+          ctx, []
+        end
     | IEquality(a, b) ->
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in
       if a_val = b_val then
-        (model, (IEquality(a, b))::assum, actx), [array_init, (Ninf, Pinf)]
+        begin
+          assum#assume (IEquality(a, b));
+          ctx, [array_init, (Ninf, Pinf)]
+        end
       else if a_val > b_val then
-        (model, (Greater(a, plus_one b))::assum, actx), []
+        begin
+          assum#assume (Greater(a, plus_one b));
+          ctx, []
+        end
       else
-        (model, (Greater(b, plus_one a))::assum, actx), []
+        begin
+          assum#assume (Greater(b, plus_one a));
+          ctx, []
+        end
     | BEquality(a, b) ->
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in
       if a_val = b_val then
-        (model, (BEquality(a, b))::assum, actx), [array_init, (Ninf, Pinf)]
+        begin
+          assum#assume (BEquality(a, b));
+          ctx, [array_init, (Ninf, Pinf)]
+        end
       else
-        (model, (BEquality(not_term a, b))::assum, actx), []
+        begin
+          assum#assume (BEquality(not_term a, b));
+          ctx, []
+        end
     | Bool(Array_access(tab, index, neg)) ->
       (assert (index = IVar(var_name, 0));
        ctx, [Arrays.equality_array actx tab neg, (Ninf, Pinf)])
     | Bool(a) ->
       let a_val = get_val_from_model model a in
       if a_val then
-        (model, Bool(a)::assum, actx), [array_init, (Ninf, Pinf)]
+        begin
+          assum#assume (Bool(a));
+          ctx, [array_init, (Ninf, Pinf)]
+        end
       else
-        (model, Bool(not_term a)::assum, actx), []
+        begin
+          assum#assume (Bool(not_term a));
+          ctx, []
+        end
 
   let expr_to_domain model var_name expr =
     let rec expr_to_domain_aux a expr =
-        match expr with
-        | And(e1, e2) ->
-          let a, d1 = expr_to_domain_aux a e1 in
-          let a, d2 = expr_to_domain_aux a e2 in
-          make_domain_intersection a d1 d2
-        | Or(e1, e2) ->
-          let a, d1 = expr_to_domain_aux a e1 in
-          let a, d2 = expr_to_domain_aux a e2 in
-          make_domain_union a d1 d2
-        | Not(e) ->
-          let a, d = expr_to_domain_aux a e in
-          a, domain_neg a d
-        | Theory_expr(e) -> make_domain_from_expr var_name a e
+      match expr with
+      | And(e1, e2) ->
+        let a, d1 = expr_to_domain_aux a e1 in
+        let a, d2 = expr_to_domain_aux a e2 in
+        make_domain_intersection a d1 d2
+      | Or(e1, e2) ->
+        let a, d1 = expr_to_domain_aux a e1 in
+        let a, d2 = expr_to_domain_aux a e2 in
+        make_domain_union a d1 d2
+      | Not(e) ->
+        let a, d = expr_to_domain_aux a e in
+        a, domain_neg a d
+      | Theory_expr(e) -> make_domain_from_expr var_name a e
     in
-    let (_ , a, _), d = expr_to_domain_aux (model, [], !my_array_ctx) expr
-    in d,a
+    let (_ , a, _), d = expr_to_domain_aux (model, new Interval_manager.interval_manager, !my_array_ctx) expr
+    in d, a#assumptions
 
 end
