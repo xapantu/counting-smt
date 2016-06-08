@@ -298,54 +298,8 @@ module LA_SMT = struct
     ctx
 
   (* ok, this could be rewritten *)
-  let domain_neg ctx d =
-    let ctx = array_ctx ctx in
-    let rec domain_neg_aux old_bound dom =
-      match dom with
-      | (arrays, interv) :: q ->
-        begin
-          match interv with
-          | (Ninf, Expr a) -> domain_neg_aux (Expr  a) q
-          | (Expr a, Pinf) ->
-            if Expr a = old_bound then
-              []
-            else
-              let interv = (old_bound, Expr a) in
-              [Arrays.mk_full_subdiv ctx interv, interv]
-          | (Expr a, Expr b) ->
-            if Expr a = old_bound then
-              domain_neg_aux (Expr b) q
-            else
-              let interv = (old_bound, Expr a) in
-              (Arrays.mk_full_subdiv ctx interv, interv) :: domain_neg_aux (Expr b) q
-          | (Pinf, _) | (_, Ninf) -> raise Bad_interval
-          | (Ninf, Pinf) -> []
-        end
 
-      | [] ->
-        let interv = (old_bound, Pinf) in
-        [Arrays.mk_full_subdiv ctx interv, interv]
-    in
-    let dneg = domain_neg_aux Ninf d
-    in
-    if d = [] then dneg
-    else
-      let rec one_on_one l1 = function
-        | t :: q ->t :: (one_on_one q l1)
-        | [] -> l1 in
-      let fin =
-        let d = List.map (fun (l, i) -> Arrays.array_sub_neg ctx l, i) d in
-        match List.hd d with
-        | (_, (Ninf, _)) -> one_on_one dneg d
-        | _ -> one_on_one d dneg
-      in 
-      fin
-      |> List.filter (fun (l, i) -> match l with
-          | Arrays.Bottom -> false
-          | _ -> true)
-
-
-  let rec interval_domain_inter (model, a, array_ctx) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) (cont: 'a -> arrayed_domain -> 'c) : 'c =
+  let rec interval_domain_inter (model, a, array_ctx) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) =
     let assum = ref a in
     let assume l =
       assum := l::!assum
@@ -400,90 +354,86 @@ module LA_SMT = struct
         else
           extract_inter q
     in
-    extract_inter d2
-    |> cont (model, !assum, array_ctx)
+    (model, !assum, array_ctx), extract_inter d2
 
 
 
-  let rec make_domain_intersection (a:context) (d1:arrayed_domain) (d2:arrayed_domain) (cont:'a -> arrayed_domain -> 'c) : 'c =
+  let rec make_domain_intersection (a:context) (d1:arrayed_domain) (d2:arrayed_domain) =
     match d1 with
-    | [] -> cont a []
+    | [] -> a, []
     | t1::q1 ->
-      interval_domain_inter a t1 d2 (fun a dt1 ->
-          make_domain_intersection a  q1 d2 (fun a dq1 ->
-              cont a (dt1 @ dq1)
-            ))
+      let a, dt1 = interval_domain_inter a t1 d2 in
+      let a, dq1 = make_domain_intersection a q1 d2 in
+      a, (dt1 @ dq1)
 
-  let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) (cont:'a -> arrayed_domain -> 'c) : 'c =
-    make_domain_intersection a (domain_neg  a d1) (domain_neg a d2) (fun a d ->
-        domain_neg a d
-        |> cont a)
+  let domain_neg a d =
+    let c = array_ctx a in
+    Interval_manager.i#domain_neg d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) (fun a -> match a with
+        | Bottom -> false
+        | _ -> true)
 
+  let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) =
+    let a, d  = make_domain_intersection a (domain_neg a d1) (domain_neg a d2) in
+    a, domain_neg a d
 
-  let make_domain_from_expr var_name ctx e cont =
+  let make_domain_from_expr var_name ctx e =
     let model, assum, actx = ctx in
     let array_init = Arrays.full_array_subdivision in
     match e with
-    | Greater(IVar(v, n), a) when v = var_name -> cont ctx [array_init, (Expr (minus n a), Pinf)]
-    | Greater(a, IVar(v, n)) when v = var_name -> cont ctx [array_init, (Ninf, Expr(minus (n-1) a))]
-    | IEquality(a, IVar(v, n)) when v = var_name -> cont ctx [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
-    | IEquality(IVar(v, n), a) when v = var_name -> cont ctx [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
+    | Greater(IVar(v, n), a) when v = var_name -> ctx, [array_init, (Expr (minus n a), Pinf)]
+    | Greater(a, IVar(v, n)) when v = var_name -> ctx, [array_init, (Ninf, Expr(minus (n-1) a))]
+    | IEquality(a, IVar(v, n)) when v = var_name -> ctx, [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
+    | IEquality(IVar(v, n), a) when v = var_name -> ctx, [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
     | Greater(a, b) ->
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in
       if a_val >= b_val then
-        cont (model, (Greater(a, b))::assum, actx) [array_init, (Ninf, Pinf)]
+        (model, (Greater(a, b))::assum, actx), [array_init, (Ninf, Pinf)]
       else
-        cont (model, (Greater(b, plus_one a))::assum, actx) []
+        (model, (Greater(b, plus_one a))::assum, actx), []
     | IEquality(a, b) ->
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in
       if a_val = b_val then
-        cont (model, (IEquality(a, b))::assum, actx) [array_init, (Ninf, Pinf)]
+        (model, (IEquality(a, b))::assum, actx), [array_init, (Ninf, Pinf)]
       else if a_val > b_val then
-        cont (model, (Greater(a, plus_one b))::assum, actx) []
+        (model, (Greater(a, plus_one b))::assum, actx), []
       else
-        cont (model, (Greater(b, plus_one a))::assum, actx) []
+        (model, (Greater(b, plus_one a))::assum, actx), []
     | BEquality(a, b) ->
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in
       if a_val = b_val then
-        cont (model, (BEquality(a, b))::assum, actx) [array_init, (Ninf, Pinf)]
+        (model, (BEquality(a, b))::assum, actx), [array_init, (Ninf, Pinf)]
       else
-        cont (model, (BEquality(not_term a, b))::assum, actx) []
+        (model, (BEquality(not_term a, b))::assum, actx), []
     | Bool(Array_access(tab, index, neg)) ->
       (assert (index = IVar(var_name, 0));
-       cont ctx [Arrays.equality_array actx tab neg, (Ninf, Pinf)])
+       ctx, [Arrays.equality_array actx tab neg, (Ninf, Pinf)])
     | Bool(a) ->
       let a_val = get_val_from_model model a in
       if a_val then
-        cont (model, Bool(a)::assum, actx) [array_init, (Ninf, Pinf)]
+        (model, Bool(a)::assum, actx), [array_init, (Ninf, Pinf)]
       else
-        cont (model, Bool(not_term a)::assum, actx) []
+        (model, Bool(not_term a)::assum, actx), []
 
   let expr_to_domain model var_name expr =
-    let rec (expr_to_domain_cps:
-               context -> expr -> (context -> arrayed_domain -> 'a) -> 'a)
-      = fun a expr cont ->
+    let rec expr_to_domain_aux a expr =
         match expr with
         | And(e1, e2) ->
-          expr_to_domain_cps a e1 (fun a d1 ->
-              expr_to_domain_cps a e2 (fun a d2 ->
-                  make_domain_intersection a d1 d2 cont
-                )
-            )
+          let a, d1 = expr_to_domain_aux a e1 in
+          let a, d2 = expr_to_domain_aux a e2 in
+          make_domain_intersection a d1 d2
         | Or(e1, e2) ->
-          expr_to_domain_cps a e1 (fun a d1 ->
-              expr_to_domain_cps a e2 (fun a d2 ->
-                  make_domain_union a d1 d2 cont
-                )
-            )
+          let a, d1 = expr_to_domain_aux a e1 in
+          let a, d2 = expr_to_domain_aux a e2 in
+          make_domain_union a d1 d2
         | Not(e) ->
-          expr_to_domain_cps a e (fun a d ->
-              cont a (domain_neg a d)
-            )
-        | Theory_expr(e) -> make_domain_from_expr var_name a e cont
+          let a, d = expr_to_domain_aux a e in
+          a, domain_neg a d
+        | Theory_expr(e) -> make_domain_from_expr var_name a e
     in
-    expr_to_domain_cps (model, [], !my_array_ctx) expr (fun (_, a, _) d -> d, a)
+    let (_ , a, _), d = expr_to_domain_aux (model, [], !my_array_ctx) expr
+    in d,a
 
 end
