@@ -237,16 +237,42 @@ module LA_SMT = struct
 
 
   let implies_card assumptions str domain =
-    "(=> " ^
-    assumptions_to_smt assumptions ^
-    begin
-    try
-      " (= " ^
-      str ^ " " ^ domain_cardinality domain ^ "))"
-    with
-    | Unbounded_interval -> " false)"
-    end
+    let () = "(=> " ^
+             assumptions_to_smt assumptions ^
+             begin
+               try
+                 " (= " ^
+                 str ^ " " ^ domain_cardinality domain ^ "))"
+               with
+               | Unbounded_interval -> " false)"
+             end
+             |> assert_formula
+    in
+    let () =
+      domain
+      |> List.map fst
+      |> List.map (Arrays.constraints_subdiv !my_array_ctx)
+      |> List.iter assert_formula
+    in
+    let () =
+      domain
+      |> List.map (fun (s, i) ->
+          Arrays.array_sub_to_string !my_array_ctx s i)
+      |> List.fold_left (fun l s -> "(+ " ^ l ^ " " ^ s ^ ")") "0"
+      |> (fun s ->
+          "(=> " ^
+          assumptions_to_smt assumptions ^
+          begin
+            try
+              " (= " ^
+              str ^ " " ^ s ^ "))"
+            with
+            | Unbounded_interval -> " false)"
+          end
+        )
       |> assert_formula
+    in
+    ()
 
 
   let solve_assuming assumptions cont =
@@ -288,9 +314,7 @@ module LA_SMT = struct
 
   let domain_neg a d =
     let c = array_ctx a in
-    Interval_manager.i#domain_neg d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) (fun a -> match a with
-        | Bottom -> false
-        | _ -> true)
+    Interval_manager.i#domain_neg d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) Arrays.is_bottom
 
   let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) =
     let a, d  = make_domain_intersection a (domain_neg a d1) (domain_neg a d2) in
@@ -298,7 +322,7 @@ module LA_SMT = struct
 
   let make_domain_from_expr var_name ctx e =
     let model, assum, actx = ctx in
-    let array_init = Arrays.full_array_subdivision in
+    let array_init = Arrays.mk_full_subdiv actx (Ninf, Pinf) in
     match e with
     | Greater(IVar(v, n), a) when v = var_name -> ctx, [array_init, (Expr (minus n a), Pinf)]
     | Greater(a, IVar(v, n)) when v = var_name -> ctx, [array_init, (Ninf, Expr(minus (n-1) a))]
@@ -350,7 +374,7 @@ module LA_SMT = struct
         end
     | Bool(Array_access(tab, index, neg)) ->
       (assert (index = IVar(var_name, 0));
-       ctx, [Arrays.equality_array actx tab neg, (Ninf, Pinf)])
+       ctx, [Arrays.equality_array actx tab neg array_init, (Ninf, Pinf)])
     | Bool(a) ->
       let a_val = get_val_from_model model a in
       if a_val then
