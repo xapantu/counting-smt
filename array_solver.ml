@@ -113,7 +113,6 @@ module Array_solver = struct
     ctx.hyps <- tree; tree
 
   let rec constraints_subdiv: array_ctx -> array_subdivision -> string = fun ctx a ->
-    raise Not_found;
     let rec all_subdiv = function
       | None -> "0"
       | Some s ->
@@ -131,7 +130,8 @@ module Array_solver = struct
         in
         Format.sprintf "(+ %s %s)" left right
     in
-    Format.sprintf "(= %s %s)" "N" (all_subdiv a)
+    if a = None then "true"
+    else Format.sprintf "(= %s %s)" "N" (all_subdiv a)
 
 
   let constraints_term: array_ctx -> array_subdivision -> int term = fun _ ->

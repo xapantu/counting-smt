@@ -13,6 +13,7 @@ module type T = sig
   val expr_to_domain: model -> string -> expr -> (domain * assumptions)
   val implies_card: assumptions -> string -> domain -> unit
   val solve_assuming: assumptions -> (model -> 'a) -> 'a
+  val domain_to_str: domain -> string
 
 end
 
@@ -72,7 +73,7 @@ module LA_SMT = struct
     | [] -> "0"
     | dom -> dom
              |> List.map (fun (s, i) ->
-                 Arrays.array_sub_to_string !my_array_ctx s i)
+  interval_to_string i)
              |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
 
   let reset_solver () =
@@ -248,7 +249,7 @@ module LA_SMT = struct
              end
              |> assert_formula
     in
-    let () =
+    (*let () =
       domain
       |> List.map fst
       |> List.map (Arrays.constraints_subdiv !my_array_ctx)
@@ -271,7 +272,7 @@ module LA_SMT = struct
           end
         )
       |> assert_formula
-    in
+    in*)
     ()
 
 
@@ -402,7 +403,9 @@ module LA_SMT = struct
       | Not(e) ->
         let a, d = expr_to_domain_aux a e in
         a, domain_neg a d
-      | Theory_expr(e) -> make_domain_from_expr var_name a e
+      | Theory_expr(e) ->
+        let a, d = make_domain_from_expr var_name a e in
+        a, d
     in
     let (_ , a, _), d = expr_to_domain_aux (model, new Interval_manager.interval_manager, !my_array_ctx) expr
     in d, a#assumptions
