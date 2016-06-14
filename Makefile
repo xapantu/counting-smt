@@ -11,4 +11,12 @@ tests: all
 	./tests.native -runner sequential
 
 clean:
-	rm -rf _build solver.native tests.native
+	rm -rf _build solver.native tests.native documentation.docdir \
+		docs/graph.pdf graph.pdf
+
+graph:  
+	ocamlbuild -ocamldoc 'ocamldoc -keep-code -dot'\
+		documentation.docdir/graph.dot -use-ocamlfind
+	dot -Tpdf _build/documentation.docdir/graph.dot > \
+		docs/graph.pdf
+	ln -s docs/graph.pdf graph.pdf

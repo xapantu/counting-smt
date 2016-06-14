@@ -112,6 +112,7 @@ module LA_SMT = struct
     | Range(Expr a, Expr b) -> And(Theory_expr(Greater(b, IVar(name, 1))), Theory_expr(Greater(IVar(name, 0), a)))
     | Range(Ninf, Expr b) -> Theory_expr(Greater(b, IVar(name, 1)))
     | Range(Expr a, Pinf) -> Theory_expr(Greater(IVar(name, 0), a))
+    | _ -> assert false
 
   let use_quantified_var name sort f =
       let () = vars := (sort, name) :: !vars in
@@ -273,6 +274,7 @@ module LA_SMT = struct
         | VBool(k) -> (modi && k) || (not modi && not k)
         | _ -> raise (TypeCheckingError a)
       end
+    | _ -> assert false
 
   exception Bad_interval
 
@@ -289,7 +291,7 @@ module LA_SMT = struct
   let domain_neg a d =
     let c = array_ctx a in
     Interval_manager.i#domain_neg d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) (fun a -> match a with
-        | Bottom -> false
+        | Array_solver.Array_solver.Bottom -> false
         | _ -> true)
 
   let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) =
