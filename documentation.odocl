@@ -1,9 +1,9 @@
 Arith_array_language
 Array_solver
+Interval_manager
 Formula
 Lisp
+Theory_model
 Mixed_solver
 Smtlib 
-Interval_manager
 Solver
-Theory_model
