@@ -45,9 +45,11 @@ let read_file f res =
 
 let () =
   let re = Str.regexp "^\"\\([^\"]*\\)\" \"\\([^\"]*\\)\"" in
+  let nl = Str.regexp "\\\\n" in
   try
     while true do
       let line = input_line cin in
+      let line = Str.global_replace nl " " line in
       let _ = Str.string_match re line 0 in
       try
         let f = Str.matched_group 1 line in
@@ -55,7 +57,7 @@ let () =
           let s = Str.matched_group 2 line in
           read_file f s;
         with Not_found -> Format.printf "No expected result given@."
-      with Not_found -> ()
+      with _ -> ()
     done
   with End_of_file -> close_in cin; exit 0
   

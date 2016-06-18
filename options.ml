@@ -14,9 +14,9 @@ let set_options_solver s =
 let verbose = ref false
 
 let args = [
-    "-path-solver", Arg.Set_string solver_path, "Set the path to the solver";
+    "--path-solver", Arg.Set_string solver_path, "Set the path to the solver";
     "-ps", Arg.Set_string solver_path, "Alias for -path-solver";
-    "-op-solver", Arg.String set_options_solver, "Set options for the solver (can be called multiple times)";
+    "--op-solver", Arg.String set_options_solver, "Set options for the solver (can be called multiple times)";
     "-os", Arg.String set_options_solver, "Alias for -op-solver";
     "--verbose", Arg.Set verbose, "be verbose";
     "-v", Arg.Set verbose, "be verbose";
