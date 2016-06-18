@@ -8,10 +8,13 @@ debug:
 
 tests: all
 	ocamlbuild tests.native -use-ocamlfind
-	./tests.native -runner sequential
+	./tests.native
+
+exttests: all
+	ocamlbuild exttests.native -use-ocamlfind
 
 clean:
-	rm -rf _build solver.native tests.native documentation.docdir \
+	rm -rf _build *.native documentation.docdir \
 		docs/graph*.svg graph*.svg docs/graph*.pdf graph*.pdf
 
 graph:  

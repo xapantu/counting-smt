@@ -1,3 +1,4 @@
+open Options
 open Formula
 
 module type T = sig
@@ -56,7 +57,6 @@ module LA_SMT = struct
 
   type context = model * Interval_manager.interval_manager * Arrays.array_ctx
 
-  let solver_command = "yices-smt2 --incremental"
   let vars = ref []
   let range = Hashtbl.create 10
   let get_range = Hashtbl.find range
@@ -81,12 +81,9 @@ module LA_SMT = struct
     in solver_in := a; solver_out := b; vars := [];
     Hashtbl.reset range; my_array_ctx := Arrays.new_ctx ()
 
-  let verbose = ref false
-  let set_verbose s = verbose := s
-
   let send_to_solver s =
     output_string !solver_out s;
-    if !verbose then
+    if verbose then
       Format.printf " -> %s@." s;
     output_string !solver_out "\n";
     flush !solver_out

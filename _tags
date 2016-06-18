@@ -1,3 +1,3 @@
-true: use_menhir, package(unix)
-true: debug,annot
+true: use_menhir, package(unix), annot
 <tests*>: package(oUnit)
+<exttests*>: package(str)
