@@ -9,6 +9,11 @@ type constrained_interval = Array_solver.array_subdivision * interval
 type constrained_domain = constrained_interval list
 
 
+exception Oops_unwrap
+let unwrap = function
+| Some s -> s
+| None -> raise Oops_unwrap
+
 class interval_manager = object(this)
 
   val mutable assumptions : rel list  = []
@@ -18,7 +23,7 @@ class interval_manager = object(this)
 
   method assumptions = assumptions
 
-  method domain_neg dom (negate_constraints:constraints -> constraints) empty_constraints is_sat_constraints =
+  method domain_neg dom (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
     let rec domain_neg_aux old_bound dom =
       match dom with
       | (_, interv) :: q ->
@@ -50,16 +55,22 @@ class interval_manager = object(this)
     if dom = [] then dneg
     else
       let rec one_on_one l1 = function
-        | t :: q ->t :: (one_on_one q l1)
+        | t :: q -> t :: (one_on_one q l1)
         | [] -> l1 in
       let fin =
-        let dom = List.map (fun (l, i) -> negate_constraints l, i) dom in
-        match List.hd dom with
-        | (_, (Ninf, _)) -> one_on_one dneg dom
-        | _ -> one_on_one dom dneg
-      in 
+        let dom = List.map (fun (l, i) ->
+            if is_full_constraints l then
+              None
+            else
+              Some (negate_constraints l, i)) dom in
+        let dneg = List.map (fun l -> Some l) dneg in
+        (match List.hd dom with
+        | Some (_, (Ninf, _)) -> one_on_one dneg dom
+        | _ -> one_on_one dom dneg)
+        |> List.filter (fun l -> l <> None)
+        |> List.map unwrap
+      in
       fin
-      |> List.filter (fun (l, i) -> is_sat_constraints l)
 
   method interval_domain_inter
       (oracle_compare: int term -> int term -> int)

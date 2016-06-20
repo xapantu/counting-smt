@@ -315,7 +315,7 @@ module LA_SMT = struct
 
   let domain_neg a d =
     let c = array_ctx a in
-    Interval_manager.i#domain_neg d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) Arrays.is_bottom
+    Interval_manager.i#domain_neg d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) Arrays.is_top
 
   let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) =
     let a, d  = make_domain_intersection a (domain_neg a d1) (domain_neg a d2) in

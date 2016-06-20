@@ -211,9 +211,9 @@ module Array_solver = struct
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun a b ->
     array_sub_dup a.hyps |> dont_care
 
-  let rec is_bottom: array_subdivision -> bool = function
+  let rec is_top: array_subdivision -> bool = function
     | None -> true
-    | Some a -> ((a.left_tree <> None || a.left_selection <> Selected) && (a.right_tree <> None || a.right_selection <> Selected) && is_bottom a.right_tree && is_bottom a.left_tree)
+    | Some a -> ((a.left_tree <> None || a.left_selection = Dont_care) && (a.right_tree <> None || a.right_selection = Dont_care) && is_top a.right_tree && is_top a.left_tree)
 
 
   let array_sub_to_string: array_ctx -> array_subdivision -> interval -> string =
