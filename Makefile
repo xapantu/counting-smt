@@ -8,7 +8,7 @@ debug:
 
 check: all exttests.native
 	ocamlbuild tests.native -use-ocamlfind
-	./tests.native
+	./tests.native 
 	./exttests.native default.test
 
 exttests: all

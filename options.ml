@@ -1,14 +1,16 @@
-let usage = "basic smt solver, takes input from stdin"
+let usage = "./solver.native file.smt"
 let file = ref "_stdin"
                
+let dir = try Sys.getenv "YICESDIR" with Not_found -> "~/"
+let cmd = Format.sprintf "find %s -iname yices-smt2" dir
+let qcmd = Format.sprintf "%s  > /dev/null" cmd
+
 let solver_path = 
   ref (
-      try Printf.sprintf "%s/%s" (Sys.getenv "YICESDIR") "yices-smt2"
-      with Not_found -> 
-        let ecode = Sys.command "type yices-smt2" in
-        if ecode = 0 then 
-          "yices-smt2"
-        else ""
+      if Sys.command qcmd = 0 then
+        let out_cin = Unix.open_process_in cmd in
+        input_line out_cin
+      else ""
     )
                       
 let solver_option = ref ["--incremental"]
@@ -43,8 +45,8 @@ let solver_path = match !solver_path with
     | "" -> 
       Format.eprintf 
         "yices-smt2 is required but can not be found\n\
-         (tests performed : $YICESDIR\\yices-smt2 and yices-smt2)\n\
-         You should export a path or give it with the -ps option@.";
+         (test performed : %s\n\
+         You should export a path or give it with the -ps option@." cmd;
       exit 1
     | s -> s
 
