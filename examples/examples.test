@@ -18,3 +18,4 @@
 "examples/test_arrays3.smt" "sat"
 "examples/test_arrays4.smt" "unsat"
 "examples/test_arrays5.smt" "unsat"
+"examples/test_arrays6.smt" "sat unsat sat"
