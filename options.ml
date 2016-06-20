@@ -1,17 +1,7 @@
 let usage = "./solver.native file.smt"
 let file = ref "_stdin"
                
-let dir = try Sys.getenv "YICESDIR" with Not_found -> "~/"
-let cmd = Format.sprintf "find %s -iname yices-smt2" dir
-let qcmd = Format.sprintf "%s  > /dev/null" cmd
-
-let solver_path = 
-  ref (
-      if Sys.command qcmd = 0 then
-        let out_cin = Unix.open_process_in cmd in
-        input_line out_cin
-      else ""
-    )
+let solver_path = ref ""
                       
 let solver_option = ref ["--incremental"]
 
@@ -41,15 +31,12 @@ let cin =
 
 let file = !file
 
-let solver_path = match !solver_path with
-    | "" -> 
-      Format.eprintf 
-        "yices-smt2 is required but can not be found\n\
-         (test performed : %s\n\
-         You should export a path or give it with the -ps option@." cmd;
-      exit 1
-    | s -> s
-
+let solver_path = 
+  let sp = match !solver_path with
+      | "" -> Find_yices.find () 
+      | p -> p in
+  Format.sprintf "%s" sp
+                          
 let solver_command = Printf.sprintf "%s %s" solver_path 
                                     (String.concat " " !solver_option)
 

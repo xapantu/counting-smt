@@ -1,6 +1,6 @@
 (** OPTIONS *)
 
-let usage = "usage: ./tests.native file.test"
+let usage = "usage: ./exttests.native file.test"
 
 let solver_path = ref ""
 
@@ -36,9 +36,12 @@ let cin =
 
 let nocolor = !nocolor
 
-let solver_path = match !solver_path with
-    | "" -> ""
-    | p -> Format.sprintf "-ps %s" p
+let solver_path = 
+  let sp = match !solver_path with
+      | "" -> Find_yices.find () 
+      | p -> p in
+  Format.sprintf "-ps %s" sp
+
 
 let solver_options =
   let l = List.map (fun op -> Format.sprintf "-os %s" op) !solver_option in

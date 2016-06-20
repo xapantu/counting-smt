@@ -13,7 +13,7 @@ let read_file f res =
     in 
     let cmd = Format.sprintf "./solver.native %s %s %s" 
                              f solver_path solver_options in
-    Format.printf "Testing : %s@\n@." cmd;
+    Format.printf "Testing : %s : @?" cmd;
     let out_cin = Unix.open_process_in cmd in
     let rec concat_input ll =
       try 
@@ -25,17 +25,16 @@ let read_file f res =
     let _ = Unix.close_process_in out_cin in
     if out_res = res then
       begin
-        Format.printf "Expected : @{<fg_green>%s@}@." res;
+        Format.printf "@{<b>@{<fg_green>OK@}@}\n@.";
         Format.printf "Obtained : @{<fg_green>%s@}@." out_res;
-        Format.printf "@\n@{<b>@{<fg_green>Test OK@}@}\n@.";
       end
     else
       begin
+        Format.printf "@{<b>@{<fg_red>Not OK@}@}\n@.";
         Format.printf "Expected : @{<fg_green>%s@}@." res;
         Format.printf "Obtained : @{<fg_red>%s@}@." out_res;
-        Format.printf "@\n@{<b>@{<fg_red>Test Not OK@}@}\n@.";
       end;
-    Format.printf "-----------@.@."
+    Format.printf "-----------@\n@."
   with
     | Exit -> Format.printf "The file %s doesn't have a .smt extension@." f
     | Sys_error s -> Format.printf "%s" s
