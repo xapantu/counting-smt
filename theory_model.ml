@@ -62,9 +62,6 @@ module LA_SMT = struct
   let vars = ref []
   let range = Hashtbl.create 10
   let get_range = Hashtbl.find range
-  let verbose = ref false
-  let set_verbose s = verbose := s
-
 
   let solver_in, solver_out =
     let a, b = Unix.open_process solver_command
@@ -72,7 +69,7 @@ module LA_SMT = struct
 
   let send_to_solver s =
     output_string !solver_out s;
-    if !verbose then
+    if verbose then
       Format.printf " -> %s@." s;
     output_string !solver_out "\n";
     flush !solver_out
