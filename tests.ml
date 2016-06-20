@@ -30,7 +30,7 @@ let test_file filename expected_result  _ =
 let test_domain_neg _ =
   let open LA_SMT in
   LA_SMT.reset_solver ();
-  let a_ctx = LA_SMT.Arrays.new_ctx() in
+  let a_ctx = LA_SMT.Arrays.new_ctx LA_SMT.fresh_var_array in
   let dom = [(LA_SMT.Arrays.mk_full_subdiv a_ctx (Ninf, Pinf)), (Ninf, Pinf)] in
   assert_equal (LA_SMT.domain_neg ([], [], a_ctx) dom) [];
   let dom = [(LA_SMT.Arrays.mk_full_subdiv a_ctx (Ninf, Expr (IValue 6))), (Ninf, Expr (IValue 6))] in

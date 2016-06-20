@@ -61,29 +61,13 @@ module LA_SMT = struct
   let vars = ref []
   let range = Hashtbl.create 10
   let get_range = Hashtbl.find range
+  let verbose = ref false
+  let set_verbose s = verbose := s
+
 
   let solver_in, solver_out =
     let a, b = Unix.open_process solver_command
     in ref a, ref b
-
-
-  let my_array_ctx = ref (Arrays.new_ctx ())
-
-  let domain_cardinality = function
-    | [] -> "0"
-    | dom -> dom
-             |> List.map (fun (s, i) ->
-  interval_to_string i)
-             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
-
-  let reset_solver () =
-    close_in !solver_in; close_out !solver_out;
-    let a, b = Unix.open_process solver_command
-    in solver_in := a; solver_out := b; vars := [];
-    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx ()
-
-  let verbose = ref false
-  let set_verbose s = verbose := s
 
   let send_to_solver s =
     output_string !solver_out s;
@@ -91,10 +75,6 @@ module LA_SMT = struct
       Format.printf " -> %s@." s;
     output_string !solver_out "\n";
     flush !solver_out
-
-  let new_range: string -> bound -> bound -> unit =
-    fun name b1 b2 ->
-      Hashtbl.add range name (Range (b1, b2))
 
   let use_var name = function
     | Int ->
@@ -106,6 +86,32 @@ module LA_SMT = struct
     | Array(Range(_, _), Bool) as e ->
       vars := (e, name) :: !vars
     | _ -> failwith "Too complex array type"
+
+
+  let v = ref 0
+  let fresh_var_array () =
+    incr v;
+    let name = "array!" ^ (string_of_int !v) in
+    use_var name Int; name
+  
+  let my_array_ctx = ref (Arrays.new_ctx fresh_var_array)
+
+  let domain_cardinality = function
+    | [] -> "0"
+    | dom -> dom
+             |> List.map (fun (s, i) ->
+                 interval_to_string i)
+             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
+
+  let reset_solver () =
+    close_in !solver_in; close_out !solver_out;
+    let a, b = Unix.open_process solver_command
+    in solver_in := a; solver_out := b; vars := [];
+    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx fresh_var_array
+
+  let new_range: string -> bound -> bound -> unit =
+    fun name b1 b2 ->
+      Hashtbl.add range name (Range (b1, b2))
 
 
   let constraints_on_sort sort name = match sort with
@@ -237,8 +243,8 @@ module LA_SMT = struct
       m
 
 
-  let implies_card assumptions str domain =
-    let () = "(=> " ^
+  let implies_card assumptions cardinality_variable domain =
+    (*let () = "(=> " ^
              assumptions_to_smt assumptions ^
              begin
                try
@@ -248,31 +254,38 @@ module LA_SMT = struct
                | Unbounded_interval -> " false)"
              end
              |> assert_formula
-    in
-    (*let () =
+    in*)
+    let () =
       domain
       |> List.map fst
       |> List.map (Arrays.constraints_subdiv !my_array_ctx)
       |> List.iter assert_formula
     in
+    let smt_assumptions = assumptions_to_smt assumptions in
     let () =
-      domain
-      |> List.map (fun (s, i) ->
-          Arrays.array_sub_to_string !my_array_ctx s i)
-      |> List.fold_left (fun l s -> "(+ " ^ l ^ " " ^ s ^ ")") "0"
-      |> (fun s ->
-          "(=> " ^
-          assumptions_to_smt assumptions ^
-          begin
-            try
-              " (= " ^
-              str ^ " " ^ s ^ "))"
-            with
-            | Unbounded_interval -> " false)"
-          end
-        )
+      begin
+        try
+          domain
+          |> List.map (fun (sub, interval) ->
+              if Arrays.is_top sub then
+                interval_to_string interval
+              else
+                Arrays.array_sub_to_string !my_array_ctx sub interval
+            )
+          |> List.fold_left (fun l s -> "(+ " ^ l ^ " " ^ s ^ ")") "0"
+          |> (fun resulting_expression ->
+              Format.sprintf "(=> %s (= %s %s))"
+                smt_assumptions
+                cardinality_variable
+                resulting_expression
+            )
+        with
+        | Unbounded_interval ->
+          Format.sprintf "(=> %s false)" smt_assumptions
+
+      end
       |> assert_formula
-    in*)
+    in
     ()
 
 
@@ -300,6 +313,8 @@ module LA_SMT = struct
         | VBool(k) -> (modi && k) || (not modi && not k)
         | _ -> raise (TypeCheckingError a)
       end
+      | Array_access(_)  -> raise (TypeCheckingError "try to use an equality over arrays?")
+      | Array_term(_) -> raise (TypeCheckingError "try to use an equality over arrays?")
 
   exception Bad_interval
 

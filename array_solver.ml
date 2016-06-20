@@ -31,23 +31,19 @@ module Array_solver = struct
 
   type array_ctx = { arrays: (string, my_array) Hashtbl.t;
                      mutable hyps: hyp_tree option;
+                     fresh_var: unit -> string;
                    }
 
   let new_array ctx name indexes =
     Hashtbl.add ctx.arrays name { name; indexes; }
 
-  let new_ctx () =
-    { arrays = Hashtbl.create 10; hyps = None; }
+  let new_ctx fresh_var =
+    { arrays = Hashtbl.create 10; hyps = None; fresh_var; }
 
   let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision = fun _ ->
     raise Not_implemented
 
-  let v = ref 0
-  let fresh_var () =
-    incr v;
-    "array!" ^ (string_of_int !v)
-  
-  let assume tree name value =
+  let assume ctx tree name value =
     let rec unselect_all = function
       | Some s -> (s.left_selection <- Unselected; s.right_selection <- Unselected; unselect_all s.left_tree; unselect_all s.right_tree;)
       | None -> ()
@@ -97,8 +93,8 @@ module Array_solver = struct
         Some s
       | None ->
         Some { name;
-               var_left = fresh_var ();
-               var_right = fresh_var ();
+               var_left = ctx.fresh_var ();
+               var_right = ctx.fresh_var ();
                left_tree = None;
                right_tree = None;
                left_selection = (if value then Unselected else Selected);
@@ -109,7 +105,7 @@ module Array_solver = struct
 
   let equality_array: array_ctx -> bool array term -> bool -> array_subdivision -> array_subdivision = fun ctx t value sub ->
     let Array_term(name) = t in
-    let tree = assume sub name value in
+    let tree = assume ctx sub name value in
     ctx.hyps <- tree; tree
 
   let rec constraints_subdiv: array_ctx -> array_subdivision -> string = fun ctx a ->
@@ -130,8 +126,31 @@ module Array_solver = struct
         in
         Format.sprintf "(+ %s %s)" left right
     in
-    if a = None then "true"
-    else Format.sprintf "(= %s %s)" "N" (all_subdiv a)
+    let constraints_total_sum = 
+      if a = None then "true"
+      else Format.sprintf "(= %s %s)" "N" (all_subdiv a)
+    in
+    let rec extract_from_tree = function
+      | None -> []
+      | Some s ->
+        let left =
+          if s.left_tree = None then
+            [s.var_left]
+          else
+            extract_from_tree s.left_tree
+        in
+        let right =
+          if s.right_tree = None then
+            [s.var_right]
+          else
+            extract_from_tree s.right_tree
+        in
+        left @ right
+    in
+    extract_from_tree a
+    |> List.fold_left (fun l s -> Format.sprintf "%s (>= %s 0)" l s) ""
+    |> fun s ->
+        Format.sprintf "(and %s %s)" s constraints_total_sum
 
 
   let constraints_term: array_ctx -> array_subdivision -> int term = fun _ ->

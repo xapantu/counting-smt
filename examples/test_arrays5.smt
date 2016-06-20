@@ -1,5 +1,6 @@
 (set-logic QF_LIA)
 (declare-fun N () Int)
+(assert (>= N 1))
 (declare-range A (1 N))
 (declare-fun a () (Array A Bool)) 
 (declare-fun b () (Array A Bool)) 
