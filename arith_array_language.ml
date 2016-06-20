@@ -63,9 +63,9 @@ let rec rel_to_smt = function
   | Greater(e1, e2) ->
     Format.sprintf "(>= %s %s)" (term_to_string e1) (term_to_string e2)
   | IEquality(e1, e2) ->
-    Format.sprintf "(= %s %s" (term_to_string e1) (term_to_string e2)
+    Format.sprintf "(= %s %s)" (term_to_string e1) (term_to_string e2)
   | BEquality(e1, e2) ->
-    Format.sprintf "(= %s %s" (term_to_string e1) (term_to_string e2)
+    Format.sprintf "(= %s %s)" (term_to_string e1) (term_to_string e2)
   | Bool(b) ->
     term_to_string b
 
