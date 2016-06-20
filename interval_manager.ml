@@ -1,15 +1,17 @@
 open Array_solver
+open Utils
 
 include Arith_array_language
 
 exception Bad_interval
 
 type constraints = Array_solver.array_subdivision
-type arrayed_interval = Array_solver.array_subdivision * interval
-type arrayed_domain = arrayed_interval list
+type constrained_interval = Array_solver.array_subdivision * interval
+type constrained_domain = constrained_interval list
 
 
 class interval_manager = object(this)
+
   val array_ctx : Array_solver.array_ctx option = None
                                                     
   val mutable assumptions : rel list  = []
@@ -25,7 +27,7 @@ class interval_manager = object(this)
 
   method assumptions = assumptions
 
-  method domain_neg dom (negate_constraints:constraints -> constraints) empty_constraints is_sat_constraints =
+  method domain_neg dom (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
     let rec domain_neg_aux old_bound dom =
       match dom with
         | (_, interv) :: q ->
@@ -57,18 +59,29 @@ class interval_manager = object(this)
     if dom = [] then dneg
     else
       let rec one_on_one l1 = function
-        | t :: q ->t :: (one_on_one q l1)
+        | t :: q -> t :: (one_on_one q l1)
         | [] -> l1 in
       let fin =
-        let dom = List.map (fun (l, i) -> negate_constraints l, i) dom in
-        match List.hd dom with
-          | (_, (Ninf, _)) -> one_on_one dneg dom
-          | _ -> one_on_one dom dneg
-      in 
+        let dom = List.map (fun (l, i) ->
+            if is_full_constraints l then
+              None
+            else
+              Some (negate_constraints l, i)) dom in
+        let dneg = List.map (fun l -> Some l) dneg in
+        (match List.hd dom with
+        | Some (_, (Ninf, _)) -> one_on_one dneg dom
+        | _ -> one_on_one dom dneg)
+        |> List.filter (fun l -> l <> None)
+        |> List.map unwrap
+      in
       fin
-      |> List.filter (fun (l, i) -> is_sat_constraints l)
 
-  method interval_domain_inter oracle_compare (oracle_bool:bool term -> bool term -> bool) (intersect_constraints: constraints -> constraints -> constraints) ((arr, (l1, u1)): arrayed_interval) (d2:arrayed_domain) =
+  method interval_domain_inter
+      (oracle_compare: int term -> int term -> int)
+      (oracle_bool:bool term -> bool term -> bool)
+      (intersect_constraints: constraints -> constraints -> constraints)
+      ((arr, (l1, u1)): constrained_interval)
+      (d2:constrained_domain) =
     (* >= *)
     let greater a b =
       match a, b with

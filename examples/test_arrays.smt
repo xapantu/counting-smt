@@ -2,6 +2,7 @@
 (declare-fun x () Int)
 (declare-fun y () Int)
 (declare-fun N () Int)
+(assert (>= N 1))
 (declare-range A (1 N))
 (declare-fun a () (Array A Bool)) 
 (assert (= (# ind A (select a ind)) N))
