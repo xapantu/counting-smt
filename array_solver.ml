@@ -40,7 +40,7 @@ module Array_solver = struct
   let new_ctx fresh_var =
     { arrays = Hashtbl.create 10; hyps = None; fresh_var; }
 
-  let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision = fun _ ->
+  let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision -> array_subdivision = fun _ ->
     raise Not_implemented
 
   let assume ctx tree name value =

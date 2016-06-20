@@ -1,3 +1,4 @@
+open Utils
 open Formula
 
 module type T = sig
@@ -313,8 +314,8 @@ module LA_SMT = struct
         | VBool(k) -> (modi && k) || (not modi && not k)
         | _ -> raise (TypeCheckingError a)
       end
-      | Array_access(_)  -> raise (TypeCheckingError "try to use an equality over arrays?")
-      | Array_term(_) -> raise (TypeCheckingError "try to use an equality over arrays?")
+      | Array_access(_)  -> failwith "trying to get an array value from a model - should not happen"
+      | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
 
   exception Bad_interval
 
@@ -375,6 +376,10 @@ module LA_SMT = struct
           assum#assume (Greater(b, plus_one a));
           ctx, []
         end
+    | BEquality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2)) ->
+      assert (index1 = IVar(var_name, 0));
+      assert (index2 = IVar(var_name, 0));
+      ctx, [Arrays.equality_arrays actx tab1 tab2 (xor neg1 neg2) array_init, (Ninf, Pinf)]
     | BEquality(a, b) ->
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in
