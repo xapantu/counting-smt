@@ -1,4 +1,5 @@
 open Utils
+open Options
 open Formula
 
 module type T = sig
@@ -58,7 +59,6 @@ module LA_SMT = struct
 
   type context = model * Interval_manager.interval_manager * Arrays.array_ctx
 
-  let solver_command = "yices-smt2 --incremental"
   let vars = ref []
   let range = Hashtbl.create 10
   let get_range = Hashtbl.find range
@@ -70,9 +70,24 @@ module LA_SMT = struct
     let a, b = Unix.open_process solver_command
     in ref a, ref b
 
+  let my_array_ctx = ref (Arrays.new_ctx ())
+
+  let domain_cardinality = function
+    | [] -> "0"
+    | dom -> dom
+             |> List.map (fun (s, i) ->
+                 Arrays.array_sub_to_string !my_array_ctx s i)
+             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
+
+  let reset_solver () =
+    close_in !solver_in; close_out !solver_out;
+    let a, b = Unix.open_process solver_command
+    in solver_in := a; solver_out := b; vars := [];
+    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx ()
+
   let send_to_solver s =
     output_string !solver_out s;
-    if !verbose then
+    if verbose then
       Format.printf " -> %s@." s;
     output_string !solver_out "\n";
     flush !solver_out
@@ -97,19 +112,6 @@ module LA_SMT = struct
   
   let my_array_ctx = ref (Arrays.new_ctx fresh_var_array)
 
-  let domain_cardinality = function
-    | [] -> "0"
-    | dom -> dom
-             |> List.map (fun (s, i) ->
-                 interval_to_string i)
-             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
-
-  let reset_solver () =
-    close_in !solver_in; close_out !solver_out;
-    let a, b = Unix.open_process solver_command
-    in solver_in := a; solver_out := b; vars := [];
-    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx fresh_var_array
-
   let new_range: string -> bound -> bound -> unit =
     fun name b1 b2 ->
       Hashtbl.add range name (Range (b1, b2))
@@ -120,6 +122,7 @@ module LA_SMT = struct
     | Range(Expr a, Expr b) -> And(Theory_expr(Greater(b, IVar(name, 1))), Theory_expr(Greater(IVar(name, 0), a)))
     | Range(Ninf, Expr b) -> Theory_expr(Greater(b, IVar(name, 1)))
     | Range(Expr a, Pinf) -> Theory_expr(Greater(IVar(name, 0), a))
+    | _ -> assert false
 
   let use_quantified_var name sort f =
       let () = vars := (sort, name) :: !vars in

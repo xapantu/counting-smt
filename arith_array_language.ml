@@ -41,10 +41,10 @@ let apply_not: bool term -> bool term = function
   | Array_access(a, i, v) -> Array_access(a, i, not v)
 
 
-let rec term_to_string: type a. a term -> string = function
+let rec term_to_string : type a. a term -> string = function
   | IVar (s, 0) -> s
-  | IVar (s, i) when i > 0 -> "(+ " ^ s ^ " " ^ string_of_int i ^ ")"
-  | IVar (s, i) (* when i < 0 *) -> "(- " ^ s ^ " " ^ string_of_int (-i) ^ ")"
+  | IVar (s, i) when i > 0 -> Format.sprintf "(+ %s %d)" s i
+  | IVar (s, i) (* when i < 0 *) -> Format.sprintf "(- %s %d)" s (-i)
   | BValue(false) -> "false"
   | BValue(true) -> "true"
   | BVar(s, true) -> s
@@ -67,11 +67,11 @@ let rec term_to_string: type a. a term -> string = function
 
 let rec rel_to_smt = function
   | Greater(e1, e2) ->
-    "(>= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
+    Format.sprintf "(>= %s %s)" (term_to_string e1) (term_to_string e2)
   | IEquality(e1, e2) ->
-    "(= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
+    Format.sprintf "(= %s %s" (term_to_string e1) (term_to_string e2)
   | BEquality(e1, e2) ->
-    "(= " ^ term_to_string e1 ^ " " ^ term_to_string e2 ^ ")"
+    Format.sprintf "(= %s %s" (term_to_string e1) (term_to_string e2)
   | Bool(b) ->
     term_to_string b
 
@@ -80,7 +80,7 @@ let bound_to_string = function
   | Expr e -> term_to_string e
 
 let interval_to_string (l, u) =
-  "(- " ^ bound_to_string u ^ " " ^ bound_to_string l ^ ")"
+  Format.sprintf "(- %s %s)" (bound_to_string u) (bound_to_string l)
 
 let (plus_one: int term -> int term) = function
   | IVar(a, i) -> IVar(a, i + 1)
