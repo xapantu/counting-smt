@@ -64,7 +64,6 @@ let rec lisp_to_int_texpr ~z ctx =
   )
   | a -> raise (Not_allowed_for_type (lisp_to_string a, "int"))
 
-
 let rec (extract_quantified_var: string -> Lisp.lisp -> int * Lisp.lisp) =
   let open Lisp in
   fun z (l:Lisp.lisp) -> match l with
@@ -98,41 +97,59 @@ let rec (extract_quantified_var: string -> Lisp.lisp -> int * Lisp.lisp) =
 let rec lisp_to_expr ?z:(z="") ctx l =
   let open Lisp in
   match l with
-    | Lisp_rec(Lisp_string "and" :: a :: b :: []) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
-    | Lisp_rec(Lisp_string "not" :: a :: []) -> Not (lisp_to_expr ~z ctx a)
-    | Lisp_rec(Lisp_string "and" :: a :: q) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "and" :: q)))
-    | Lisp_rec(Lisp_string "or" :: a :: b :: []) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
-    | Lisp_rec(Lisp_string "or" :: a :: q) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
-    | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
-      Theory_expr (Bool (Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b, true)))
-    | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
-      Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
-    | Lisp_rec(Lisp_string ">=" :: a :: b :: []) ->
-      let count_quantified_a, a = extract_quantified_var z a in
-      let count_quantified_b, b = extract_quantified_var z b in
-      let total_count = count_quantified_a - count_quantified_b in
-      if total_count = 1 then
-        lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: Lisp_string z :: (Lisp_rec (Lisp_string "-" :: b :: a :: [])) :: [])
-      else if total_count = -1 then
-        lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec (Lisp_string "-" :: a :: b :: [])) :: Lisp_string z :: [])
-      else failwith "non unit coefficient in front of the quantified"
-    | Lisp_rec(Lisp_string ">" :: a :: b :: []) ->
-      lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec(Lisp_string "-" :: a :: Lisp_int 1 :: [])) :: b :: [])
-    | Lisp_rec(Lisp_string "<" :: a :: b :: []) ->
-      lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">" :: b :: a :: []))
-    | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
-      lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">=" :: b :: a :: []))
-    | Lisp_rec(Lisp_string "=" :: a :: b :: []) -> Theory_expr (IEquality (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
-    | Lisp_true -> Theory_expr (Bool (BValue true))
-    | Lisp_false -> Theory_expr (Bool (BValue false))
-    | Lisp_string b -> Theory_expr (Bool (BVar(b, true)))
-    | _ -> raise (Not_allowed (lisp_to_string l))
+  | Lisp_rec(Lisp_string "and" :: a :: b :: []) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
+  | Lisp_rec(Lisp_string "not" :: a :: []) -> Not (lisp_to_expr ~z ctx a)
+  | Lisp_rec(Lisp_string "and" :: a :: q) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "and" :: q)))
+  | Lisp_rec(Lisp_string "or" :: a :: b :: []) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
+  | Lisp_rec(Lisp_string "or" :: a :: q) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
+  | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
+    Theory_expr (Bool (lisp_to_bool ~z ctx l))
+  | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
+    Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
+  | Lisp_rec(Lisp_string ">=" :: a :: b :: []) ->
+    let count_quantified_a, a = extract_quantified_var z a in
+    let count_quantified_b, b = extract_quantified_var z b in
+    let total_count = count_quantified_a - count_quantified_b in
+    if total_count = 1 then
+      lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: Lisp_string z :: (Lisp_rec (Lisp_string "-" :: b :: a :: [])) :: [])
+    else if total_count = -1 then
+      lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec (Lisp_string "-" :: a :: b :: [])) :: Lisp_string z :: [])
+    else failwith "non unit coefficient in front of the quantified"
+  | Lisp_rec(Lisp_string ">" :: a :: b :: []) ->
+    lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec(Lisp_string "-" :: a :: Lisp_int 1 :: [])) :: b :: [])
+  | Lisp_rec(Lisp_string "<" :: a :: b :: []) ->
+    lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">" :: b :: a :: []))
+  | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
+    lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">=" :: b :: a :: []))
+  | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
+    begin
+      try
+        Theory_expr (IEquality (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
+      with
+      | Not_allowed_for_type(_, "int") ->
+        Theory_expr (BEquality (lisp_to_bool ~z ctx a, lisp_to_bool ~z ctx b))
+    end
+  | Lisp_true -> Theory_expr (Bool (BValue true))
+  | Lisp_false -> Theory_expr (Bool (BValue false))
+  | Lisp_string b -> Theory_expr (Bool (lisp_to_bool ~z ctx l))
+  | _ -> raise (Not_allowed (lisp_to_string l))
 and lisp_to_array =
   let open Lisp in
   function
   | Lisp_string x ->
     Array_term x
   | l -> raise (Not_allowed_for_type (lisp_to_string l, "array"))
+and lisp_to_bool ?z:(z="") ctx l =
+  let open Lisp in
+  match l with
+  | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
+     Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b, true)
+  | Lisp_string b -> BVar(b, true)
+  | Lisp_rec(Lisp_string "not" :: a :: []) ->
+    let a = lisp_to_bool ~z ctx a in
+    apply_not a
+  | _ -> raise (Not_allowed_for_type (lisp_to_string l, "bool"))
+
 
 let lisp_to_sort =
   let open Lisp in

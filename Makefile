@@ -11,7 +11,7 @@ check: all exttests.native
 	./tests.native 
 	./exttests.native default.test
 
-exttests: all
+exttests.native: all
 	ocamlbuild exttests.native -use-ocamlfind
 
 clean:
