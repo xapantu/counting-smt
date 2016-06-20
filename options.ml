@@ -5,7 +5,7 @@ let solver_path =
   ref (
       try Printf.sprintf "%s/%s" (Sys.getenv "YICESDIR") "yices-smt2"
       with Not_found -> 
-        let ecode = Sys.command "dtype yices-smt2" in
+        let ecode = Sys.command "type yices-smt2" in
         if ecode = 0 then 
           "yices-smt2"
         else ""
