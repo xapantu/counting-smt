@@ -25,14 +25,12 @@ x = 3
 
 #### Options
 Available options are :
-|Option | Effect|
-| --------|---------|
-|`--path-solver` |Set the path to the solver |
-|`-ps` |Alias for -path-solver |
-|`--op-solver` |Set options for the solver (can be called multiple times) |
-|`-op` |Alias for -op-solver |
-|`--verbose` |be verbose |
-|`-v` |be verbose |
+* `--path-solver` Set the path to the solver
+* `-ps`           Alias for -path-solver
+* `--op-solver`   Set options for the solver (can be called multiple times)
+* `-op`           Alias for -op-solver
+* `--verbose`     be verbose
+* `-v`            be verbose 
 
 
 Tests
@@ -110,12 +108,9 @@ Test OK
 ```
 
 #### Options
-Available options are :
-|Option | Effect|
-| --------|---------|
-|`--path-solver` |This option is sent to `./solver.native` for each test |
-|`-ps` |This option is sent to `./solver.native` for each test |
-|`--op-solver` |This option is sent to `./solver.native` for each test |
-|`-op` |This option is sent to `./solver.native` for each test |
+* `--path-solver` This option is sent to `./solver.native` for each test
+* `-ps`           This option is sent to `./solver.native` for each test
+* `--op-solver`   This option is sent to `./solver.native` for each test
+* `-op`           This option is sent to `./solver.native` for each test
 
 Some of the tests are broken atm.

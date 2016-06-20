@@ -1,10 +1,15 @@
 let usage = "basic smt solver, takes input from stdin"
 let file = ref "_stdin"
                
-let solver_path = ref (
-  try Printf.sprintf "%s/%s" (Sys.getenv "YICESDIR") "yices-smt2"
-  with Not_found -> ""                    
-                    )
+let solver_path = 
+  ref (
+      try Printf.sprintf "%s/%s" (Sys.getenv "YICESDIR") "yices-smt2"
+      with Not_found -> 
+        let ecode = Sys.command "dtype yices-smt2" in
+        if ecode = 0 then 
+          "yices-smt2"
+        else ""
+    )
                       
 let solver_option = ref ["--incremental"]
 
@@ -35,12 +40,15 @@ let cin =
 let file = !file
 
 let solver_path = match !solver_path with
-      | "" -> 
-        Format.eprintf 
-          "You have no $YICESDIR environment variable declared\
-           You should export a path or give it with the -ps option@.";
-        exit 1
-      | s -> s
+    | "" -> 
+      Format.eprintf 
+        "yices-smt2 is required but can not be found\n\
+         (tests performed : $YICESDIR\\yices-smt2 and yices-smt2)\n\
+         You should export a path or give it with the -ps option@.";
+      exit 1
+    | s -> s
 
-let solver_command = Printf.sprintf "%s %s" solver_path (String.concat " " !solver_option)
+let solver_command = Printf.sprintf "%s %s" solver_path 
+                                    (String.concat " " !solver_option)
+
 let verbose = !verbose

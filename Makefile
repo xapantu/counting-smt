@@ -6,9 +6,10 @@ byte:
 debug:
 	ocamlbuild solver.d.byte -use-ocamlfind
 
-tests: all
+check: all exttests.native
 	ocamlbuild tests.native -use-ocamlfind
 	./tests.native
+	./exttests.native default.test
 
 exttests: all
 	ocamlbuild exttests.native -use-ocamlfind
