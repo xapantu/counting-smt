@@ -70,24 +70,9 @@ module LA_SMT = struct
     let a, b = Unix.open_process solver_command
     in ref a, ref b
 
-  let my_array_ctx = ref (Arrays.new_ctx ())
-
-  let domain_cardinality = function
-    | [] -> "0"
-    | dom -> dom
-             |> List.map (fun (s, i) ->
-                 Arrays.array_sub_to_string !my_array_ctx s i)
-             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
-
-  let reset_solver () =
-    close_in !solver_in; close_out !solver_out;
-    let a, b = Unix.open_process solver_command
-    in solver_in := a; solver_out := b; vars := [];
-    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx ()
-
   let send_to_solver s =
     output_string !solver_out s;
-    if verbose then
+    if !verbose then
       Format.printf " -> %s@." s;
     output_string !solver_out "\n";
     flush !solver_out
@@ -115,6 +100,19 @@ module LA_SMT = struct
   let new_range: string -> bound -> bound -> unit =
     fun name b1 b2 ->
       Hashtbl.add range name (Range (b1, b2))
+
+  let domain_cardinality = function
+    | [] -> "0"
+    | dom -> dom
+             |> List.map (fun (s, i) ->
+                 Arrays.array_sub_to_string !my_array_ctx s i)
+             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
+
+  let reset_solver () =
+    close_in !solver_in; close_out !solver_out;
+    let a, b = Unix.open_process solver_command
+    in solver_in := a; solver_out := b; vars := [];
+    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx fresh_var_array
 
 
   let constraints_on_sort sort name = match sort with
