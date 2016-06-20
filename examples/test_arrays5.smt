@@ -8,13 +8,13 @@
 (assert (= (# ind A (=
 	(select a ind)
 	(select b ind)
-	) N)))
+	)) N))
 (assert (= (# ind A (=
 	(select a ind)
 	(select c ind)
-	) N)))
+	)) N))
 (assert (= (# ind A (=
 	(select b ind)
 	(not (select c ind))
-	) N)))
+	)) N))
 (check-sat)
