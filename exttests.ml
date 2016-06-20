@@ -25,7 +25,7 @@ let read_file f res =
     let _ = Unix.close_process_in out_cin in
     if out_res = res then
       begin
-        Format.printf "@{<b>@{<fg_green>OK@}@}\n@.";
+        Format.printf "@{<b>@{<fg_green>OK@}@}@.";
         Format.printf "Obtained : @{<fg_green>%s@}@." out_res;
       end
     else
@@ -34,7 +34,7 @@ let read_file f res =
         Format.printf "Expected : @{<fg_green>%s@}@." res;
         Format.printf "Obtained : @{<fg_red>%s@}@." out_res;
       end;
-    Format.printf "-----------@\n@."
+    Format.printf "-----------@."
   with
     | Exit -> Format.printf "The file %s doesn't have a .smt extension@." f
     | Sys_error s -> Format.printf "%s" s
