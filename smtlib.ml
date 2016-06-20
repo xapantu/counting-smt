@@ -145,6 +145,9 @@ and lisp_to_bool ?z:(z="") ctx l =
   | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
      Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b, true)
   | Lisp_string b -> BVar(b, true)
+  | Lisp_rec(Lisp_string "not" :: a :: []) ->
+    let a = lisp_to_bool ~z ctx a in
+    apply_not a
   | _ -> raise (Not_allowed_for_type (lisp_to_string l, "bool"))
 
 

@@ -1,4 +1,5 @@
 open Array_solver
+open Utils
 
 include Arith_array_language
 
@@ -8,11 +9,6 @@ type constraints = Array_solver.array_subdivision
 type constrained_interval = Array_solver.array_subdivision * interval
 type constrained_domain = constrained_interval list
 
-
-exception Oops_unwrap
-let unwrap = function
-| Some s -> s
-| None -> raise Oops_unwrap
 
 class interval_manager = object(this)
 

@@ -1,3 +1,5 @@
+open Utils
+
 (* Ideally, that module should be parametrized by the data type (Bool, Int, Range, Reals) 
  * only bools for now *)
 module Array_solver = struct
@@ -24,6 +26,13 @@ module Array_solver = struct
                     mutable right_tree: hyp_tree option;
                     mutable left_selection: selection;
                     mutable right_selection: selection; }
+
+  let print_tree h =
+    let rec aux s = function
+      | None -> Format.printf "%s -@." s
+      | Some a -> Format.printf "%s%s@." s a.name; aux (s ^ a.var_left ^ "\t") a.left_tree; aux (s ^ a.var_right ^ "\t") a.right_tree
+    in
+    aux "" h
   
   type domain = interval list
 
@@ -40,10 +49,7 @@ module Array_solver = struct
   let new_ctx fresh_var =
     { arrays = Hashtbl.create 10; hyps = None; fresh_var; }
 
-  let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision -> array_subdivision = fun _ ->
-    raise Not_implemented
-
-  let assume ctx tree name value =
+  let assume ctx name value tree =
     let rec unselect_all = function
       | Some s -> (s.left_selection <- Unselected; s.right_selection <- Unselected; unselect_all s.left_tree; unselect_all s.right_tree;)
       | None -> ()
@@ -101,34 +107,29 @@ module Array_solver = struct
                right_selection = (if value then Selected else Unselected);
              }
     in
-    find_node_aux tree
-
+    let new_tree = find_node_aux tree in
+    ctx.hyps <- new_tree;
+    new_tree
+  
   let equality_array: array_ctx -> bool array term -> bool -> array_subdivision -> array_subdivision = fun ctx t value sub ->
     let Array_term(name) = t in
-    let tree = assume ctx sub name value in
-    ctx.hyps <- tree; tree
+    assume ctx name value sub
 
   let rec constraints_subdiv: array_ctx -> array_subdivision -> string = fun ctx a ->
     let rec all_subdiv = function
-      | None -> "0"
+      | None -> "true", None
       | Some s ->
-        let left =
-          if s.left_tree = None then
-            s.var_left
-          else
-            all_subdiv s.left_tree
-        in
-        let right =
-          if s.right_tree = None then
-            s.var_right
-          else
-            all_subdiv s.right_tree
-        in
-        Format.sprintf "(+ %s %s)" left right
+        let left_constraint, var_left = all_subdiv s.left_tree in
+        let right_constraint, var_right = all_subdiv s.right_tree in
+        (if s.left_tree = None then
+          "true"
+        else
+          Format.sprintf "(= %s %s) (= %s %s) %s %s" s.var_left (unwrap var_left) s.var_right (unwrap var_right) left_constraint right_constraint),
+        Some (Format.sprintf "(+ %s %s)" s.var_left s.var_right)
     in
-    let constraints_total_sum = 
-      if a = None then "true"
-      else Format.sprintf "(= %s %s)" "N" (all_subdiv a)
+    let constraints_total_sum, additional = all_subdiv a in
+    let constraints_total_sum = if additional = None then constraints_total_sum else
+      Format.sprintf "(= %s %s) %s" "N" (unwrap additional) constraints_total_sum
     in
     let rec extract_from_tree = function
       | None -> []
@@ -199,14 +200,20 @@ module Array_solver = struct
   let array_sub_dup: array_subdivision -> array_subdivision = fun a ->
     let rec dup_aux = function
       | Some a ->
-      Some { a with left_tree = dup_aux a.left_tree; right_tree = dup_aux a.left_tree; }
+      Some { a with left_tree = dup_aux a.left_tree; right_tree = dup_aux a.right_tree; }
       | None -> None
     in
     dup_aux a
 
-  let unwrap = function
-    | Some s -> s
-    | None -> failwith "none, really?"
+
+
+  let dont_care a =
+    let rec aux = function
+      | None -> None
+      | Some s -> Some { s with left_selection = Dont_care; right_selection = Dont_care; left_tree = aux s.left_tree; right_tree = aux s.right_tree; }
+    in
+    aux a
+
 
   let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun c a ->
     let duplicated = array_sub_dup a in
@@ -219,13 +226,23 @@ module Array_solver = struct
         Some { a with left_tree = neg_aux a.left_tree; right_tree = neg_aux a.right_tree; }
     in
     neg_aux duplicated
-
-  let dont_care a =
-    let rec aux = function
-      | None -> None
-      | Some s -> Some { s with left_selection = Dont_care; right_selection = Dont_care; left_tree = aux s.left_tree; right_tree = aux s.right_tree; }
+  
+  let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision -> array_subdivision = fun ctx t1 t2 value sub ->
+    let Array_term(name1) = t1
+    and Array_term(name2) = t2 in
+    let mysub =
+      array_sub_dup sub
+      |> assume ctx name1 true
+      |> assume ctx name2 value
     in
-    aux a
+  let mysub2 =
+      dont_care mysub
+      |> array_sub_intersect ctx sub
+      |> assume ctx name1 false
+      |> assume ctx name2 (not value)
+    in
+    array_sub_neg ctx (array_sub_intersect ctx (array_sub_neg ctx mysub) (array_sub_neg ctx mysub2))
+
 
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun a b ->
     array_sub_dup a.hyps |> dont_care
