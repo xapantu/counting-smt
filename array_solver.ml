@@ -194,6 +194,7 @@ module Array_solver = struct
                right_tree;
                name = a.name;
              }
+      | _ -> failwith "subdivision a is NOT smaller than b, aborting"
     in
     intersect_aux a b
 
