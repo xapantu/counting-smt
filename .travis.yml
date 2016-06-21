@@ -1,8 +1,8 @@
 language: c
 sudo: required
 install: wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.travis-opam.sh
-script: bash -ex .travis-opam.sh
-before_install:
+install:
+  - bash -ex .travis-opam.sh
   - opam install ocamlbuild
 env:
   - OCAML_VERSION=4.00
