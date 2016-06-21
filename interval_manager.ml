@@ -9,25 +9,18 @@ type constraints = Array_solver.array_subdivision
 type constrained_interval = Array_solver.array_subdivision * interval
 type constrained_domain = constrained_interval list
 
-
 class interval_manager = object(this)
 
   val array_ctx : Array_solver.array_ctx option = None
                                                     
   val mutable assumptions : rel list  = []
                                           
-
-  method unwrap_ctx =
-    match array_ctx with
-      | None -> failwith "uninitialized"
-      | Some s -> s
-
   method assume a =
     assumptions <- a :: assumptions
 
   method assumptions = assumptions
 
-  method domain_neg dom (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
+  method complementary_domain dom (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
     let rec domain_neg_aux old_bound dom =
       match dom with
         | (_, interv) :: q ->
@@ -76,7 +69,7 @@ class interval_manager = object(this)
       in
       fin
 
-  method interval_domain_inter
+  method intersection_interval_domain
       (oracle_compare: int term -> int term -> int)
       (oracle_bool:bool term -> bool term -> bool)
       (intersect_constraints: constraints -> constraints -> constraints)
@@ -134,15 +127,9 @@ class interval_manager = object(this)
     in
     extract_inter d2
                   
-  method make_domain_intersection oracle_int oracle_bool intersect_constraints d1 d2 =
-    let do_inter = this#interval_domain_inter oracle_int oracle_bool intersect_constraints in
-    let self = this#make_domain_intersection oracle_int oracle_bool intersect_constraints in
-    match d1 with
-      | [] -> []
-      | t1::q1 ->
-        do_inter t1 d2 @ self q1 d2
-
-
+  method intersection_domains oracle_int oracle_bool intersect_constraints d1 d2 =
+    let do_inter = this#intersection_interval_domain oracle_int oracle_bool intersect_constraints in
+    List.fold_right (fun constrained_interval l -> do_inter constrained_interval d2 @ l) d1 []
 
 end
 

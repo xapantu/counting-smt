@@ -321,7 +321,7 @@ module LA_SMT = struct
     ctx
 
   let rec make_domain_intersection (m, i, c:context) (d1:arrayed_domain) (d2:arrayed_domain) =
-    (m, i, c), i#make_domain_intersection (fun a b ->
+    (m, i, c), i#intersection_domains (fun a b ->
         compare (get_val_from_model m a) (get_val_from_model m b))
       (fun a b -> 
          (get_val_from_model m a) = (get_val_from_model m b)) 
@@ -329,7 +329,7 @@ module LA_SMT = struct
 
   let domain_neg a d =
     let c = array_ctx a in
-    Interval_manager.i#domain_neg d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) Arrays.is_top
+    Interval_manager.i#complementary_domain d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) Arrays.is_top
 
   let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) =
     let a, d  = make_domain_intersection a (domain_neg a d1) (domain_neg a d2) in
