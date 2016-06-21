@@ -11,4 +11,4 @@ env:
 os:
   - linux
 script:
-  - make check
+  - eval $(opam config env) && make all && make check
