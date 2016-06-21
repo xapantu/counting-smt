@@ -6,7 +6,6 @@ install:
 before_script:
   - opam install -y ocamlbuild ounit menhir ocamlfind
 env:
-  - OCAML_VERSION=4.00
   - OCAML_VERSION=4.01
   - OCAML_VERSION=4.02
 os:
