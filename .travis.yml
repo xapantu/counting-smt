@@ -11,4 +11,4 @@ env:
 os:
   - linux
 script:
-  - YICESDIR=/tmp/yices-2.4.2/bin/ echo $(pwd) && eval $(opam config env) && make all && make check
+  - eval $(opam config env) && YICESDIR=/tmp/yices-2.4.2/bin/ make all && YICESDIR=/tmp/yices-2.4.2/bin/ make check
