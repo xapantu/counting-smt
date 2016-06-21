@@ -132,5 +132,3 @@ class interval_manager = object(this)
     List.fold_right (fun constrained_interval l -> do_inter constrained_interval d2 @ l) d1 []
 
 end
-
-let i = new interval_manager
