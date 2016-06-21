@@ -70,8 +70,7 @@ class interval_manager = object(this)
       fin
 
   method intersection_interval_domain
-      (oracle_compare: int term -> int term -> int)
-      (oracle_bool:bool term -> bool term -> bool)
+      (oracle:'a term -> 'a term -> int)
       (intersect_constraints: constraints -> constraints -> constraints)
       ((arr, (l1, u1)): constrained_interval)
       (d2:constrained_domain) =
@@ -83,7 +82,7 @@ class interval_manager = object(this)
         | Pinf, _  -> true
         | _, Pinf  -> false
         | Expr a, Expr b ->
-          let comp = oracle_compare a b in
+          let comp = oracle a b in
           if comp >= 0 then
             (this#assume (Greater(a, b)); true)
           else
@@ -94,7 +93,7 @@ class interval_manager = object(this)
         | Ninf, Ninf -> true
         | Pinf, Pinf -> true
         | Expr a, Expr b ->
-          let comp = oracle_compare a b in
+          let comp = oracle a b in
           if comp = 0 then
             (this#assume (IEquality(a, b)); true)
           else if comp  > 0 then
@@ -127,8 +126,8 @@ class interval_manager = object(this)
     in
     extract_inter d2
                   
-  method intersection_domains oracle_int oracle_bool intersect_constraints d1 d2 =
-    let do_inter = this#intersection_interval_domain oracle_int oracle_bool intersect_constraints in
+  method intersection_domains oracle intersect_constraints d1 d2 =
+    let do_inter = this#intersection_interval_domain oracle intersect_constraints in
     List.fold_right (fun constrained_interval l -> do_inter constrained_interval d2 @ l) d1 []
 
 end
