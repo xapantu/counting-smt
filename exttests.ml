@@ -3,6 +3,8 @@ open Exttestspretty
 
 (** TEST FUNCTION *)
 
+let success = ref true
+
 (* Read one by one the files to test and pipe the output to an input_channel
  then check if the result is consistent with the expected one *)
 let read_file f res = 
@@ -30,11 +32,12 @@ let read_file f res =
       end
     else
       begin
+        success := false;
         Format.printf "@{<b>@{<fg_red>Not OK@}@}\n@.";
         Format.printf "Expected : @{<fg_green>%s@}@." res;
         Format.printf "Obtained : @{<fg_red>%s@}@." out_res;
       end;
-    Format.printf "-----------@."
+    Format.printf "-----------@.";
   with
     | Exit -> Format.printf "The file %s doesn't have a .smt extension@." f
     | Sys_error s -> Format.printf "%s" s
@@ -58,5 +61,10 @@ let () =
         with Not_found -> Format.printf "No expected result given@."
       with _ -> ()
     done
-  with End_of_file -> close_in cin; exit 0
+  with End_of_file ->
+    close_in cin;
+    if !success then
+      exit 0
+    else
+      exit 1
   
