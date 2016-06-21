@@ -1,3 +1,4 @@
 true: use_menhir, package(unix), annot
 <tests*>: package(oUnit)
 <exttests*>: package(str)
+<exttests/*>: for-pack(Exttests)
