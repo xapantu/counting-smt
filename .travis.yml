@@ -3,7 +3,7 @@ sudo: required
 install:
   - wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.travis-ocaml.sh && bash -ex .travis-ocaml.sh
 before_script:
-  - opam install ocamlbuild
+  - opam install -y ocamlbuild ounit menhir
 env:
   - OCAML_VERSION=4.00
   - OCAML_VERSION=4.01
