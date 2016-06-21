@@ -252,22 +252,23 @@ module Array_solver = struct
     | Some a -> ((a.left_tree <> None || a.left_selection = Dont_care) && (a.right_tree <> None || a.right_selection = Dont_care) && is_top a.right_tree && is_top a.left_tree)
 
 
-  let array_sub_to_string: array_ctx -> array_subdivision -> interval -> string =
-    fun ctx sub interval ->
-      let rec aux = function
-        | None -> "0"
-        | Some s ->
-          let left =
-            if s.left_tree = None && (s.left_selection = Selected || s.left_selection = Dont_care) then s.var_left
-            else "0"
-          in
-          let right =
-            if s.right_tree = None && (s.right_selection = Selected || s.right_selection = Dont_care) then s.var_right
-            else "0"
-          in
-          Format.sprintf "(+ %s (+ %s (+ %s %s)))" left right (aux s.left_tree) (aux s.right_tree)
-      in
-      aux sub
+  let array_sub_to_string ctx sub interval =
+    let rec aux = function
+      | None -> ["0"]
+      | Some s ->
+        let left =
+          if s.left_tree = None && (s.left_selection = Selected || s.left_selection = Dont_care) then
+            [s.var_left]
+          else ["0"]
+        in
+        let right =
+          if s.right_tree = None && (s.right_selection = Selected || s.right_selection = Dont_care) then
+            [s.var_right]
+          else ["0"]
+        in
+        left @ right @ (aux s.left_tree) @ (aux s.right_tree)
+    in
+    aux sub
     
 
 
