@@ -91,8 +91,14 @@ module LA_SMT = struct
     incr v;
     let name = "array!" ^ (string_of_int !v) in
     use_var name Int; name
+
+  let ensure_var_exists a =
+    try
+      ignore (List.find (fun (s, n) -> n = a) !vars); ()
+    with
+    | Not_found -> use_var a Int
   
-  let my_array_ctx = ref (Arrays.new_ctx fresh_var_array)
+  let my_array_ctx = ref (Arrays.new_ctx fresh_var_array ensure_var_exists)
 
   let new_range: string -> bound -> bound -> unit =
     fun name b1 b2 ->
@@ -110,7 +116,7 @@ module LA_SMT = struct
     close_in !solver_in; close_out !solver_out;
     let a, b = Unix.open_process solver_command
     in solver_in := a; solver_out := b; vars := [];
-    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx fresh_var_array
+    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx fresh_var_array ensure_var_exists
 
 
   let constraints_on_sort sort name = match sort with
@@ -202,7 +208,9 @@ module LA_SMT = struct
 
   let push f =
     send_to_solver "(push 1)";
+    let old_v = !vars in
     f ();
+    vars := old_v;
     send_to_solver "(pop 1)"
 
   let solve_in_context f cont =
@@ -244,13 +252,13 @@ module LA_SMT = struct
 
 
   let implies_card assumptions cardinality_variable domain =
-    let () =
-      List.iter (fun (sub, interval) ->
+    let constraint_sum =
+      List.fold_left (fun l (sub, interval) ->
           try
-            assert_formula (Arrays.constraints_subdiv !my_array_ctx "" (interval_to_string interval) sub)
+            Format.sprintf "%s %s" l (Arrays.constraints_subdiv !my_array_ctx "" (interval_to_string interval) sub)
           with
-          | Unbounded_interval -> ()
-        ) domain
+          | Unbounded_interval -> l
+        ) "" domain
     in
     let smt_assumptions = assumptions_to_smt assumptions in
     let () =
@@ -271,8 +279,9 @@ module LA_SMT = struct
               else s)
           |> Format.sprintf "(+ %s)"
           |> (fun resulting_expression ->
-              Format.sprintf "(=> %s (= %s %s))"
+              Format.sprintf "(=> %s (and %s (= %s %s)))"
                 smt_assumptions
+                constraint_sum
                 cardinality_variable
                 resulting_expression
             )

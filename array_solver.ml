@@ -41,13 +41,14 @@ module Array_solver = struct
   type array_ctx = { arrays: (string, my_array) Hashtbl.t;
                      mutable hyps: hyp_tree option;
                      fresh_var: unit -> string;
+                     ensure_var_exists: string -> unit;
                    }
 
   let new_array ctx name indexes =
     Hashtbl.add ctx.arrays name { name; indexes; }
 
-  let new_ctx fresh_var =
-    { arrays = Hashtbl.create 10; hyps = None; fresh_var; }
+  let new_ctx fresh_var ensure_var_exists =
+    { arrays = Hashtbl.create 10; hyps = None; fresh_var; ensure_var_exists; }
 
   let assume ctx name value tree =
     let rec unselect_all = function
@@ -123,9 +124,11 @@ module Array_solver = struct
       | Some s ->
         let left_constraint, var_left = all_subdiv s.left_tree in
         let right_constraint, var_right = all_subdiv s.right_tree in
+        ctx.ensure_var_exists (prefix ^ s.var_left);
+        ctx.ensure_var_exists (prefix ^ s.var_right);
         (if s.left_tree = None then
-          "true"
-        else
+           "true"
+         else
           Format.sprintf "(= %s%s %s) (= %s%s %s) %s %s" prefix s.var_left (unwrap var_left) prefix s.var_right (unwrap var_right) left_constraint right_constraint),
         Some (Format.sprintf "(+ %s%s %s%s)" prefix s.var_left prefix s.var_right)
     in
@@ -138,13 +141,13 @@ module Array_solver = struct
       | Some s ->
         let left =
           if s.left_tree = None then
-            [s.var_left]
+            [prefix ^ s.var_left]
           else
             extract_from_tree s.left_tree
         in
         let right =
           if s.right_tree = None then
-            [s.var_right]
+            [prefix ^ s.var_right]
           else
             extract_from_tree s.right_tree
         in
