@@ -20,15 +20,6 @@ exception Out
 exception Not_allowed of string
 exception Not_allowed_for_type of string * string
 
-let rec lisp_to_bool_texpr =
-  let open Lisp in
-  function
-  | Lisp_true -> BValue true
-  | Lisp_false -> BValue false
-  | Lisp_string(z) -> (ensure_bool z; BVar(z, true))
-  | a -> raise (Not_allowed_for_type(lisp_to_string a, "bool"))
-
-
 let rec ensure_int_expr z =
   let open Lisp in
   function
@@ -144,10 +135,12 @@ and lisp_to_bool ?z:(z="") ctx l =
   match l with
   | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
      Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b, true)
-  | Lisp_string b -> BVar(b, true)
+  | Lisp_string(z) -> (ensure_bool z; BVar(z, true))
   | Lisp_rec(Lisp_string "not" :: a :: []) ->
     let a = lisp_to_bool ~z ctx a in
     apply_not a
+  | Lisp_true -> BValue true
+  | Lisp_false -> BValue false
   | _ -> raise (Not_allowed_for_type (lisp_to_string l, "bool"))
 
 
