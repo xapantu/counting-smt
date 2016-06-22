@@ -115,7 +115,9 @@ module Array_solver = struct
     let Array_term(name) = t in
     assume ctx name value sub
 
-  let rec constraints_subdiv: array_ctx -> array_subdivision -> string = fun ctx a ->
+  (* The first string argument is the prefix of the variable, for instance if one wants a constraints for every interval
+   * the second one is the number of indices. *)
+  let rec constraints_subdiv: array_ctx -> string -> string -> array_subdivision -> string = fun ctx prefix total a ->
     let rec all_subdiv = function
       | None -> "true", None
       | Some s ->
@@ -124,12 +126,12 @@ module Array_solver = struct
         (if s.left_tree = None then
           "true"
         else
-          Format.sprintf "(= %s %s) (= %s %s) %s %s" s.var_left (unwrap var_left) s.var_right (unwrap var_right) left_constraint right_constraint),
-        Some (Format.sprintf "(+ %s %s)" s.var_left s.var_right)
+          Format.sprintf "(= %s%s %s) (= %s%s %s) %s %s" prefix s.var_left (unwrap var_left) prefix s.var_right (unwrap var_right) left_constraint right_constraint),
+        Some (Format.sprintf "(+ %s%s %s%s)" prefix s.var_left prefix s.var_right)
     in
     let constraints_total_sum, additional = all_subdiv a in
     let constraints_total_sum = if additional = None then constraints_total_sum else
-      Format.sprintf "(= %s %s) %s" "N" (unwrap additional) constraints_total_sum
+      Format.sprintf "(= %s %s) %s" total (unwrap additional) constraints_total_sum
     in
     let rec extract_from_tree = function
       | None -> []
@@ -152,10 +154,6 @@ module Array_solver = struct
     |> List.fold_left (fun l s -> Format.sprintf "%s (>= %s 0)" l s) ""
     |> fun s ->
         Format.sprintf "(and %s %s)" s constraints_total_sum
-
-
-  let constraints_term: array_ctx -> array_subdivision -> int term = fun _ ->
-    raise Not_implemented
 
   (* the first subdivision must be smaller than the second one *)
   let array_sub_intersect: array_ctx -> array_subdivision -> array_subdivision -> array_subdivision = fun ctx a b ->
@@ -253,18 +251,18 @@ module Array_solver = struct
     | Some a -> ((a.left_tree <> None || a.left_selection = Dont_care) && (a.right_tree <> None || a.right_selection = Dont_care) && is_top a.right_tree && is_top a.left_tree)
 
 
-  let array_sub_to_string ctx sub interval =
+  let array_sub_to_string ctx prefix sub interval =
     let rec aux = function
       | None -> ["0"]
       | Some s ->
         let left =
           if s.left_tree = None && (s.left_selection = Selected || s.left_selection = Dont_care) then
-            [s.var_left]
+            [prefix ^ s.var_left]
           else ["0"]
         in
         let right =
           if s.right_tree = None && (s.right_selection = Selected || s.right_selection = Dont_care) then
-            [s.var_right]
+            [prefix ^ s.var_right]
           else ["0"]
         in
         left @ right @ (aux s.left_tree) @ (aux s.right_tree)

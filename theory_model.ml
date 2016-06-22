@@ -102,7 +102,7 @@ module LA_SMT = struct
     | [] -> "0"
     | dom -> dom
              |> List.map (fun (s, i) ->
-                 Arrays.array_sub_to_string !my_array_ctx s i)
+                 Arrays.array_sub_to_string !my_array_ctx "" s i)
              |> List.concat
              |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
 
@@ -245,10 +245,12 @@ module LA_SMT = struct
 
   let implies_card assumptions cardinality_variable domain =
     let () =
-      domain
-      |> List.map fst
-      |> List.map (Arrays.constraints_subdiv !my_array_ctx)
-      |> List.iter assert_formula
+      List.iter (fun (sub, interval) ->
+          try
+            assert_formula (Arrays.constraints_subdiv !my_array_ctx "" (interval_to_string interval) sub)
+          with
+          | Unbounded_interval -> ()
+        ) domain
     in
     let smt_assumptions = assumptions_to_smt assumptions in
     let () =
@@ -259,7 +261,7 @@ module LA_SMT = struct
               if Arrays.is_top sub then
                 [interval_to_string interval]
               else
-                Arrays.array_sub_to_string !my_array_ctx sub interval
+                Arrays.array_sub_to_string !my_array_ctx "" sub interval
             )
           |> List.concat
           |> List.filter ((<>) "0")
