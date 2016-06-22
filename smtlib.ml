@@ -19,6 +19,7 @@ let fresh_var =
 exception Out
 exception Not_allowed of string
 exception Not_allowed_for_type of string * string
+exception Unknown_type of string
 
 let rec ensure_int_expr z =
   let open Lisp in
@@ -162,7 +163,11 @@ let rec extract_cards l =
       let sort = match sort with
           | "Int" -> Int
           | "Bool" -> Bool
-          | a -> LA_SMT.get_range a
+          | a ->
+            try
+              LA_SMT.get_range a
+            with
+            | Not_found -> raise (Unknown_type a)
       in
       let ctx = ref [] in
       let formula = use_quantified_var z sort (fun a -> And(a, lisp_to_expr ~z ctx formula)) in
