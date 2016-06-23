@@ -65,6 +65,19 @@ let rec term_to_string : type a. a term -> string = function
     raise (Unprintable_elements (Format.sprintf "%s[%s]" tab index))
 
 
+let rec term_to_uid : type a. a term -> string = function
+  | IVar (s, 0) -> s
+  | IVar (s, i) when i > 0 -> Format.sprintf "!plus!%s!%d!" s i
+  | IVar (s, i) (* when i < 0 *) -> Format.sprintf "!minus!%s!%d!" s (-i)
+  | BValue(false) -> "false"
+  | BValue(true) -> "true"
+  | BVar(s, true) -> s
+  | BVar(s, false) -> Format.sprintf "!not!%s!" s
+  | IValue i -> string_of_int i
+  | Array_term e ->
+    raise (Unprintable_elements e)
+  | _ -> failwith "no uid"
+
 let rec rel_to_smt = function
   | Greater(e1, e2) ->
     Format.sprintf "(>= %s %s)" (term_to_string e1) (term_to_string e2)

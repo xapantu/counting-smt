@@ -11,14 +11,59 @@ type constrained_domain = constrained_interval list
 
 class interval_manager = object(this)
 
-  val array_ctx : Array_solver.array_ctx option = None
-                                                    
   val mutable assumptions : rel list  = []
+  val mutable ordering : int term list = []
                                           
   method assume a =
     assumptions <- a :: assumptions
 
   method assumptions = assumptions
+
+  method order oracle a =
+    if not (List.mem a ordering) then
+      let rec insert_into = function
+        | [] -> [a]
+        | t::q ->
+          if oracle t a >= 0 then
+            a :: t :: q
+          else
+            t :: insert_into q
+      in
+      ordering <- insert_into ordering
+
+  method ordering = ordering
+
+  method get_slices_of_ordering (a, b) =
+    let rec find_aux a ind b = match b with
+      | [] -> failwith (term_to_string a); raise Not_found
+      | t::q ->
+        if t = a then ind
+        else find_aux a (ind + 1) q
+    in
+    let a, b =
+    ( match a with
+      | Ninf -> 0
+      | Expr a -> find_aux a 1 ordering
+      | Pinf -> failwith "pinf" )
+  , ( match b with
+      | Pinf -> List.length ordering + 1
+      | Expr b -> find_aux b 1 ordering
+      | Ninf -> raise Not_found )
+    in
+    (* sometimes terms are equal *)
+    let a, b = min a b, max a b in
+    let res = ref [] in
+    for i = a to (b-1) do
+      if i = 0 && List.length ordering = 0 then
+        res := "inf!inf" :: !res
+      else if i = 0 then
+        res := ("inf!" ^ term_to_uid (List.nth ordering i)) :: !res
+      else if i = List.length ordering then
+        res := (term_to_uid (List.nth ordering (i-1)) ^ "!inf") :: !res
+      else
+        res := (term_to_uid (List.nth ordering (i-1)) ^ "!" ^ term_to_uid (List.nth ordering i)) :: !res
+    done;
+    !res
 
   method complementary_domain dom (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
     let rec domain_neg_aux old_bound dom =
@@ -74,8 +119,13 @@ class interval_manager = object(this)
       (intersect_constraints: constraints -> constraints -> constraints)
       ((arr, (l1, u1)): constrained_interval)
       (d2:constrained_domain) =
+    let save_order = function
+      | Expr a -> this#order oracle a
+      | _ -> ()
+    in
     (* >= *)
     let greater a b =
+      save_order a; save_order b;
       match a, b with
         | _, Ninf -> true
         | Ninf, _ -> false
@@ -86,9 +136,10 @@ class interval_manager = object(this)
           if comp >= 0 then
             (this#assume (Greater(a, b)); true)
           else
-            (this#assume (Greater(b, plus_one a)); false)
+            (this#assume (Greater(b, plus_one a)); this#order oracle (plus_one a); false)
     in
     let equal a b =
+      save_order a; save_order b;
       match a, b with
         | Ninf, Ninf -> true
         | Pinf, Pinf -> true
@@ -97,9 +148,9 @@ class interval_manager = object(this)
           if comp = 0 then
             (this#assume (IEquality(a, b)); true)
           else if comp  > 0 then
-            (this#assume (Greater(a, plus_one b)); false)
+            (this#assume (Greater(a, plus_one b)); this#order oracle (plus_one b); false)
           else
-            (this#assume (Greater(b, plus_one a)); false)
+            (this#assume (Greater(b, plus_one a)); this#order oracle (plus_one a); false)
         | _ -> false
     in
     let rec extract_inter = function

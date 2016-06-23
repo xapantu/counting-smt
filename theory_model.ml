@@ -7,14 +7,16 @@ module type T = sig
   open Formula
   type model
   type domain
+  type interval_manager
 
   exception Unsat
 
+  val new_interval_manager: unit -> interval_manager
   val solve: (model -> 'a) -> 'a
   val solve_formula: expr -> (model -> 'a) -> 'a
-  val expr_to_domain: model -> string -> expr -> (domain * assumptions)
-  val implies_card: assumptions -> string -> domain -> unit
-  val solve_assuming: assumptions -> (model -> 'a) -> 'a
+  val expr_to_domain: interval_manager -> model -> string -> expr -> domain
+  val implies_card: interval_manager -> string -> domain -> unit
+  val solve_assuming: interval_manager -> (model -> 'a) -> 'a
   val domain_to_str: domain -> string
 
 end
@@ -31,6 +33,7 @@ module LA_SMT = struct
 
   type arrayed_interval = Arrays.array_subdivision * interval
   type arrayed_domain = arrayed_interval list
+  type interval_manager = Interval_manager.interval_manager
 
   type domain = arrayed_domain
 
@@ -43,9 +46,8 @@ module LA_SMT = struct
     "[" ^ bound_inf_to_string l ^ ", " ^ bound_inf_to_string u ^ "]"
   
   let domain_to_str d =
-    d
-    |> List.map (fun (s, i) ->
-         (inf_interval_to_string i))
+    List.map (fun (s, i) ->
+         (inf_interval_to_string i)) d
     |> String.concat ", "
 
 
@@ -103,14 +105,6 @@ module LA_SMT = struct
   let new_range: string -> bound -> bound -> unit =
     fun name b1 b2 ->
       Hashtbl.add range name (Range (b1, b2))
-
-  let domain_cardinality = function
-    | [] -> "0"
-    | dom -> dom
-             |> List.map (fun (s, i) ->
-                 Arrays.array_sub_to_string !my_array_ctx "" s i)
-             |> List.concat
-             |> List.fold_left (fun l a -> Format.sprintf "(+ %s %s)" l a) "0"
 
   let reset_solver () =
     close_in !solver_in; close_out !solver_out;
@@ -250,17 +244,25 @@ module LA_SMT = struct
           if(String.length b <= 5 || String.sub b 0 5 <> "card!") then Printf.fprintf stdout "%s = %d\n" b v)
       m
 
+  let rec seq (a, b) =
+    if a = b then [a]
+    else a :: seq (a+1, b)
 
-  let implies_card assumptions cardinality_variable domain =
-    let constraint_sum =
-      List.fold_left (fun l (sub, interval) ->
-          try
-            Format.sprintf "%s %s" l (Arrays.constraints_subdiv !my_array_ctx "" (interval_to_string interval) sub)
-          with
-          | Unbounded_interval -> l
-        ) "" domain
+  let implies_card interval_manager cardinality_variable domain =
+    let rec ensure_arrays a = function
+      | [] -> []
+      | t::q ->
+            Arrays.constraints_subdiv !my_array_ctx (term_to_uid a ^ "!" ^ term_to_uid t) (interval_to_string (Expr a, Expr t)) !my_array_ctx.hyps :: ensure_arrays t q
     in
-    let smt_assumptions = assumptions_to_smt assumptions in
+    let ordering = interval_manager#ordering in
+    let constraint_sum =
+      if List.length ordering >= 2 then
+        ensure_arrays (List.hd ordering) (List.tl ordering)
+        |> String.concat " "
+      else
+        ""
+    in
+    let smt_assumptions = assumptions_to_smt interval_manager#assumptions in
     let () =
       begin
         try
@@ -269,7 +271,7 @@ module LA_SMT = struct
               if Arrays.is_top sub then
                 [interval_to_string interval]
               else
-                Arrays.array_sub_to_string !my_array_ctx "" sub interval
+                Arrays.array_sub_to_string !my_array_ctx (interval_manager#get_slices_of_ordering interval) sub interval
             )
           |> List.concat
           |> List.filter ((<>) "0")
@@ -295,9 +297,9 @@ module LA_SMT = struct
     ()
 
 
-  let solve_assuming assumptions cont =
+  let solve_assuming im cont =
     solve_in_context (fun () ->
-        assumptions_to_smt assumptions |> assert_formula)
+        assumptions_to_smt im#assumptions |> assert_formula)
       cont
 
 
@@ -419,7 +421,7 @@ module LA_SMT = struct
           ctx, []
         end
 
-  let expr_to_domain model var_name expr =
+  let expr_to_domain im model var_name expr =
     let rec expr_to_domain_aux a expr =
       match expr with
       | And(e1, e2) ->
@@ -437,7 +439,9 @@ module LA_SMT = struct
         let a, d = make_domain_from_expr var_name a e in
         a, d
     in
-    let (_ , a, _), d = expr_to_domain_aux (model, new Interval_manager.interval_manager, !my_array_ctx) expr
-    in d, a#assumptions
+    let ctx, d = expr_to_domain_aux (model, im, !my_array_ctx) expr
+    in d
+
+  let new_interval_manager () = new Interval_manager.interval_manager
 
 end

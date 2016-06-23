@@ -4,17 +4,16 @@ module Mixed_solver (T: Theory_model.T) =
            
     let rec solve_starting_from_model cards m =
       let open List in
+      let im = T.new_interval_manager () in
       let all_assumptions =
         cards
-        |> map (fun c ->
-                let (d, assumptions) = T.expr_to_domain m c.quantified_var c.expr in
-                T.implies_card assumptions c.var_name d;
-                assumptions
+        |> iter (fun c ->
+                let d = T.expr_to_domain im m c.quantified_var c.expr in
+                T.implies_card im c.var_name d;
                )
-        |> concat
       in
       try
-        T.solve_assuming all_assumptions (fun m -> m)
+        T.solve_assuming im (fun m -> m)
       with
         | T.Unsat -> T.solve (solve_starting_from_model cards)
 

@@ -119,6 +119,7 @@ module Array_solver = struct
   (* The first string argument is the prefix of the variable, for instance if one wants a constraints for every interval
    * the second one is the number of indices. *)
   let rec constraints_subdiv: array_ctx -> string -> string -> array_subdivision -> string = fun ctx prefix total a ->
+    let prefix = "a!" ^ prefix in
     let rec all_subdiv = function
       | None -> "true", None
       | Some s ->
@@ -134,7 +135,7 @@ module Array_solver = struct
     in
     let constraints_total_sum, additional = all_subdiv a in
     let constraints_total_sum = if additional = None then constraints_total_sum else
-      Format.sprintf "(= %s %s) %s" total (unwrap additional) constraints_total_sum
+        Format.sprintf "(= %s %s) %s" total (unwrap additional) constraints_total_sum
     in
     let rec extract_from_tree = function
       | None -> []
@@ -255,17 +256,18 @@ module Array_solver = struct
 
 
   let array_sub_to_string ctx prefix sub interval =
+    let prefix = List.map ( (^) "a!") prefix in
     let rec aux = function
       | None -> ["0"]
       | Some s ->
         let left =
           if s.left_tree = None && (s.left_selection = Selected || s.left_selection = Dont_care) then
-            [prefix ^ s.var_left]
+            List.map (fun p -> p ^ s.var_left) prefix
           else ["0"]
         in
         let right =
           if s.right_tree = None && (s.right_selection = Selected || s.right_selection = Dont_care) then
-            [prefix ^ s.var_right]
+            List.map (fun p -> p ^ s.var_right) prefix
           else ["0"]
         in
         left @ right @ (aux s.left_tree) @ (aux s.right_tree)
