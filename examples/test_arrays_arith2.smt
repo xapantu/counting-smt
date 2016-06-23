@@ -5,6 +5,6 @@
 (assert (>= N 1))
 (declare-fun i () Int)
 (assert (and (>= i 0) (> N i)))
-(assert (= (# x A (= (select a x) true)) (- N 1)))
-(assert (= (# x A (and (= x i) (not (select a x))))))
+(assert (= (# x A (select a x)) (- N 1)))
+(assert (= (# x A (and (= x i) (not (select a x)))) 1))
 (check-sat)
