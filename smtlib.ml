@@ -19,20 +19,22 @@ let fresh_var =
 exception Out
 exception Not_allowed of string
 exception Not_allowed_for_type of string * string
-exception Unknown_type of string
+exception Type_not_allowed_for_counting of string
 
 let rec ensure_int_expr z =
   let open Lisp in
   function
   | Lisp_rec(Lisp_string "-" :: a :: b :: []) | Lisp_rec(Lisp_string "+" :: a :: b :: []) ->
-                                                (ensure_int_expr z a; ensure_int_expr z b)
+    (ensure_int_expr z a; ensure_int_expr z b)
   | Lisp_int(v) -> ()
   | Lisp_string(v) ->
-    if v = z then raise Not_found
+    if v = z then
+      failwith "shouldn't have to ensure the type of a quantified variable"
     else ensure_int v
   | (Lisp_rec(_) as e)
   | (Lisp_false as e) 
-  | (Lisp_true as e) -> raise (Not_allowed_for_type(lisp_to_string e, "int"))
+  | (Lisp_true as e) ->
+    raise (Not_allowed_for_type(lisp_to_string e, "int"))
 
 let rec lisp_to_int_texpr ~z ctx =
   let open Lisp in
@@ -42,58 +44,67 @@ let rec lisp_to_int_texpr ~z ctx =
   | Lisp_rec(Lisp_string "+" :: Lisp_string z :: Lisp_int i :: []) -> (ensure_int z; IVar(z, i))
   | Lisp_rec(Lisp_string "-" :: Lisp_string z :: Lisp_int i :: []) -> (ensure_int z; IVar(z, -i))
   | Lisp_rec(Lisp_string "+" :: Lisp_int i :: Lisp_string z :: []) -> (ensure_int z; IVar(z, i))
-  | Lisp_rec(Lisp_string "+" :: a :: b :: []) as e -> (
+  | Lisp_rec(Lisp_string "+" :: a :: b :: []) as e ->
     let subs = fresh_var () in
     ctx := (Def (Lisp_rec (Lisp_string "=" :: Lisp_string subs :: e :: []))) :: !ctx;
     ensure_int_expr z a; ensure_int_expr z b;
     IVar(subs, 0)
-  )
-  | Lisp_rec(Lisp_string "-" :: a :: b :: []) as e -> (
+  | Lisp_rec(Lisp_string "-" :: a :: b :: []) as e ->
     let subs = fresh_var () in
     ctx := (Def (Lisp_rec (Lisp_string "=" :: Lisp_string subs :: e :: []))) :: !ctx;
     ensure_int_expr z a; ensure_int_expr z b;
     IVar(subs, 0)
-  )
-  | a -> raise (Not_allowed_for_type (lisp_to_string a, "int"))
+  | a ->
+    raise (Not_allowed_for_type (lisp_to_string a, "int"))
 
-let rec (extract_quantified_var: string -> Lisp.lisp -> int * Lisp.lisp) =
+(** This function takes an expression and count how many times
+ * the quantified variable (the first argument) appears. It also returns
+ * an expression which is free of this variable. *)
+let rec (extract_quantified_var: string -> Lisp.lisp -> int * Lisp.lisp) = fun z l ->
   let open Lisp in
-  fun z (l:Lisp.lisp) -> match l with
-                           | Lisp_string(_) | Lisp_false | Lisp_true | Lisp_int _ -> 0, l
-                           | Lisp_rec(Lisp_string "+" :: Lisp_string v :: b :: [] )
-                               when v = z->
-                             let n, b = extract_quantified_var z b in
-                             n+1, b
-                           | Lisp_rec(Lisp_string "+" :: b :: Lisp_string v :: [] )
-                               when v = z ->
-                             let n, b = extract_quantified_var z b in
-                             n+1, b
-                           | Lisp_rec(Lisp_string "-" :: b :: Lisp_string v :: [] )
-                               when v = z ->
-                             let n, b = extract_quantified_var z b in
-                             n-1, b
-                           | Lisp_rec(Lisp_string "-" :: Lisp_string v :: b :: [] )
-                               when v = z ->
-                             let n, b = extract_quantified_var z b in
-                             1-n, Lisp_rec (Lisp_string "-" :: Lisp_int 0 :: b :: [])
-                           | Lisp_rec(Lisp_string "-" :: a :: b :: [] ) ->
-                             let na, a = extract_quantified_var z a in
-                             let nb, b = extract_quantified_var z b in
-                             na - nb, Lisp_rec (Lisp_string "-" :: a :: b :: [])
-                           | Lisp_rec(Lisp_string "+" :: a :: b :: [] ) ->
-                             let na, a = extract_quantified_var z a in
-                             let nb, b = extract_quantified_var z b in
-                             na + nb, Lisp_rec (Lisp_string "+" :: a :: b :: [])
-                           | a -> raise (Not_allowed (lisp_to_string a))
+  match l with
+  | Lisp_string(_) | Lisp_false | Lisp_true | Lisp_int _ -> 0, l
+  | Lisp_rec(Lisp_string "+" :: Lisp_string v :: b :: [] )
+    when v = z->
+    let n, b = extract_quantified_var z b in
+    n+1, b
+  | Lisp_rec(Lisp_string "+" :: b :: Lisp_string v :: [] )
+    when v = z ->
+    let n, b = extract_quantified_var z b in
+    n+1, b
+  | Lisp_rec(Lisp_string "-" :: b :: Lisp_string v :: [] )
+    when v = z ->
+    let n, b = extract_quantified_var z b in
+    n-1, b
+  | Lisp_rec(Lisp_string "-" :: Lisp_string v :: b :: [] )
+    when v = z ->
+    let n, b = extract_quantified_var z b in
+    1-n, Lisp_rec (Lisp_string "-" :: Lisp_int 0 :: b :: [])
+  | Lisp_rec(Lisp_string "-" :: a :: b :: [] ) ->
+    let na, a = extract_quantified_var z a in
+    let nb, b = extract_quantified_var z b in
+    na - nb, Lisp_rec (Lisp_string "-" :: a :: b :: [])
+  | Lisp_rec(Lisp_string "+" :: a :: b :: [] ) ->
+    let na, a = extract_quantified_var z a in
+    let nb, b = extract_quantified_var z b in
+    na + nb, Lisp_rec (Lisp_string "+" :: a :: b :: [])
+  | a ->
+    raise (Not_allowed_for_type (lisp_to_string a, "int"))
 
+(** z is the quantified variable name *)
 let rec lisp_to_expr ?z:(z="") ctx l =
   let open Lisp in
   match l with
-  | Lisp_rec(Lisp_string "and" :: a :: b :: []) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
-  | Lisp_rec(Lisp_string "not" :: a :: []) -> Not (lisp_to_expr ~z ctx a)
-  | Lisp_rec(Lisp_string "and" :: a :: q) -> And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "and" :: q)))
-  | Lisp_rec(Lisp_string "or" :: a :: b :: []) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
-  | Lisp_rec(Lisp_string "or" :: a :: q) -> Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
+  | Lisp_rec(Lisp_string "and" :: a :: b :: []) ->
+    And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
+  | Lisp_rec(Lisp_string "not" :: a :: []) ->
+    Not (lisp_to_expr ~z ctx a)
+  | Lisp_rec(Lisp_string "and" :: a :: q) ->
+    And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "and" :: q)))
+  | Lisp_rec(Lisp_string "or" :: a :: b :: []) ->
+    Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
+  | Lisp_rec(Lisp_string "or" :: a :: q) ->
+    Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
   | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
     Theory_expr (Bool (lisp_to_bool ~z ctx l))
   | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
@@ -103,16 +114,22 @@ let rec lisp_to_expr ?z:(z="") ctx l =
     let count_quantified_b, b = extract_quantified_var z b in
     let total_count = count_quantified_a - count_quantified_b in
     if total_count = 1 then
-      lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: Lisp_string z :: (Lisp_rec (Lisp_string "-" :: b :: a :: [])) :: [])
+      let transformed_expr =
+        Lisp_rec [Lisp_string ">="; Lisp_string z; Lisp_rec [Lisp_string "-"; b; a]] in
+      lisp_to_expr ~z ctx transformed_expr
     else if total_count = -1 then
-      lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec (Lisp_string "-" :: a :: b :: [])) :: Lisp_string z :: [])
+      let transformed_expr =
+        Lisp_rec [Lisp_string ">="; Lisp_rec [Lisp_string "-"; a; b]; Lisp_string z] in
+      lisp_to_expr ~z ctx transformed_expr
     else failwith "non unit coefficient in front of the quantified"
   | Lisp_rec(Lisp_string ">" :: a :: b :: []) ->
-    lisp_to_expr ~z ctx @@ Lisp_rec(Lisp_string ">=" :: (Lisp_rec(Lisp_string "-" :: a :: Lisp_int 1 :: [])) :: b :: [])
+    let transformed_expr =
+      Lisp_rec [Lisp_string ">="; Lisp_rec [Lisp_string "-"; a; Lisp_int 1]; b] in
+    lisp_to_expr ~z ctx transformed_expr
   | Lisp_rec(Lisp_string "<" :: a :: b :: []) ->
-    lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">" :: b :: a :: []))
+    lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">"; b; a])
   | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
-    lisp_to_expr ~z ctx (Lisp_rec(Lisp_string ">=" :: b :: a :: []))
+    lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">="; b; a])
   | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
     begin
       try
@@ -121,10 +138,10 @@ let rec lisp_to_expr ?z:(z="") ctx l =
       | Not_allowed_for_type(_, "int") ->
         Theory_expr (BEquality (lisp_to_bool ~z ctx a, lisp_to_bool ~z ctx b))
     end
-  | Lisp_true -> Theory_expr (Bool (BValue true))
-  | Lisp_false -> Theory_expr (Bool (BValue false))
-  | Lisp_string b -> Theory_expr (Bool (lisp_to_bool ~z ctx l))
-  | _ -> raise (Not_allowed (lisp_to_string l))
+  | Lisp_true | Lisp_false | Lisp_string _ ->
+    Theory_expr (Bool (lisp_to_bool ~z ctx l))
+  | _ ->
+    raise (Not_allowed (lisp_to_string l))
 and lisp_to_array =
   let open Lisp in
   function
@@ -142,7 +159,8 @@ and lisp_to_bool ?z:(z="") ctx l =
     apply_not a
   | Lisp_true -> BValue true
   | Lisp_false -> BValue false
-  | _ -> raise (Not_allowed_for_type (lisp_to_string l, "bool"))
+  | _ ->
+    raise (Not_allowed_for_type (lisp_to_string l, "bool"))
 
 
 let lisp_to_sort =
@@ -167,7 +185,7 @@ let rec extract_cards l =
             try
               LA_SMT.get_range a
             with
-            | Not_found -> raise (Unknown_type a)
+            | Not_found -> raise (Type_not_allowed_for_counting a)
       in
       let ctx = ref [] in
       let formula = use_quantified_var z sort (fun a -> And(a, lisp_to_expr ~z ctx formula)) in
@@ -210,21 +228,17 @@ let rec runner stdout lexing_stdin cards' =
             | Lisp_rec (Lisp_string "assert" :: a :: []) ->
               begin
                 let assertion_cardless, new_card_vars = extract_cards a in
-                let new_vars =
-                  List.filter (function
-                                | Card _ -> false
-                                | Def _ -> true) new_card_vars |>
-                    List.map (function
-                               | Card _ -> raise Not_found
-                               | Def a -> a)
+                let new_vars, new_cards = List.partition (function
+                    | Card _ -> false
+                    | Def _ -> true) new_card_vars
                 in
-                let new_cards =
-                  List.filter (function
-                                | Card _ -> true
-                                | Def _ -> false) new_card_vars
-                  |> List.map (function
-                                | Card a -> a
-                                | Def _ -> raise Not_found)
+                let new_vars = List.map (function
+                    | Card _ -> raise Not_found
+                    | Def a -> a) new_vars
+                in
+                let new_cards = List.map (function
+                    | Card a -> a
+                    | Def _ -> raise Not_found) new_cards
                 in
                 Lisp_rec (Lisp_string "assert" :: Lisp_rec (Lisp_string "and" :: assertion_cardless :: new_vars) :: [])
                 |> lisp_to_string
