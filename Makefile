@@ -1,4 +1,4 @@
-all: byte
+all: byte debug
 
 byte:
 	ocamlbuild solver.native -use-ocamlfind

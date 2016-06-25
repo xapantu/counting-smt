@@ -23,13 +23,14 @@ end
 
 module LA_SMT = struct
 
-  include Arith_array_language
-
   exception Unknown_answer of string
   exception Unsat
   exception TypeCheckingError of string
 
   module Arrays = Array_solver.Array_solver
+  type model = Arith_array_language.model
+  open Arith_array_language
+
 
   type arrayed_interval = Arrays.array_subdivision * interval
   type arrayed_domain = arrayed_interval list
@@ -50,6 +51,11 @@ module LA_SMT = struct
          (inf_interval_to_string i)) d
     |> String.concat ", "
 
+  let print_domain_debug =
+    List.iter (fun (s, i) ->
+        Arrays.print_tree s;
+        Format.printf "%s@." (inf_interval_to_string i);)
+
 
   module Formula = IFormula(struct
       type texpr = rel
@@ -58,6 +64,13 @@ module LA_SMT = struct
     end)
 
   open Formula
+
+  type expr = Formula.expr
+
+  let assumptions_to_expr l =
+    if l = [] then Theory_expr (Bool(BValue(true)))
+        else List.fold_left (fun l s ->
+        And(l, Theory_expr(s))) (Theory_expr (List.hd l)) (List.tl l)
 
   type context = model * Interval_manager.interval_manager * Arrays.array_ctx
 
@@ -241,7 +254,7 @@ module LA_SMT = struct
         match v with
         | VBool(t) ->  Printf.fprintf stdout "%s = %b\n" b t
         | VInt(v) ->
-          if(String.length b <= 5 || String.sub b 0 5 <> "card!") then Printf.fprintf stdout "%s = %d\n" b v)
+          if(String.length b <= 10000 || String.sub b 0 5 <> "card!") then Printf.fprintf stdout "%s = %d\n" b v)
       m
 
   let rec seq (a, b) =
@@ -252,17 +265,19 @@ module LA_SMT = struct
     let rec ensure_arrays a = function
       | [] -> []
       | t::q ->
-            Arrays.constraints_subdiv !my_array_ctx (term_to_uid a ^ "!" ^ term_to_uid t) (interval_to_string (Expr a, Expr t)) !my_array_ctx.hyps :: ensure_arrays t q
+            Arrays.(constraints_subdiv !my_array_ctx (term_to_uid a ^ "!" ^ term_to_uid t) (interval_to_string (Expr a, Expr t)) !my_array_ctx.hyps :: ensure_arrays t q)
     in
     let ordering = interval_manager#ordering in
     let constraint_sum =
       if List.length ordering >= 2 then
         ensure_arrays (List.hd ordering) (List.tl ordering)
-        |> String.concat " "
+        |> List.concat
+        |> List.fold_left (fun l s ->
+            And(l, Theory_expr(s))) (Theory_expr(Bool(BValue(true))))
       else
-        ""
+        Theory_expr(Bool(BValue(true)))
     in
-    let smt_assumptions = assumptions_to_smt interval_manager#assumptions in
+    let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
     let () =
       begin
         try
@@ -279,13 +294,14 @@ module LA_SMT = struct
           |> (fun s ->
               if s = "" then "0"
               else s)
-          |> Format.sprintf "(+ %s)"
+          |> Format.sprintf "(+ %s 0)"
+          |> (fun res ->
+              And(constraint_sum, Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0))))
+            )
           |> (fun resulting_expression ->
-              Format.sprintf "(=> %s (and %s (= %s %s)))"
+              Format.sprintf "(=> %s %s)"
                 smt_assumptions
-                constraint_sum
-                cardinality_variable
-                resulting_expression
+                (expr_to_smt resulting_expression)
             )
         with
         | Unbounded_interval ->
@@ -299,7 +315,7 @@ module LA_SMT = struct
 
   let solve_assuming im cont =
     solve_in_context (fun () ->
-        assumptions_to_smt im#assumptions |> assert_formula)
+        assumptions_to_expr im#assumptions |> expr_to_smt |> assert_formula)
       cont
 
 
@@ -321,7 +337,7 @@ module LA_SMT = struct
         | VBool(k) -> (modi && k) || (not modi && not k)
         | _ -> raise (TypeCheckingError a)
       end
-      | Array_access(_)  -> failwith "trying to get an array value from a model - should not happen"
+    | Array_access(Array_term(a), _, _) -> Format.eprintf "trying to get an array value from a model - should not happen: %s@." a; assert(false)
       | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
 
   exception Bad_interval
@@ -338,7 +354,9 @@ module LA_SMT = struct
     let oracle a b =
       compare (get_val_from_model (model_ctx ctx) a) (get_val_from_model (model_ctx ctx) b)
     in
-    (interval_manager ctx)#intersection_domains oracle (Arrays.array_sub_intersect (array_ctx ctx)) d1 d2
+    let d = (interval_manager ctx)#intersection_domains oracle (Arrays.array_sub_intersect (array_ctx ctx)) d1 d2 in
+    (* Format.printf "from@."; print_domain_debug d1; print_domain_debug d2; Format.printf "to@."; print_domain_debug d; *)
+    d
 
   let domain_neg a d =
     let c = array_ctx a in
@@ -349,7 +367,7 @@ module LA_SMT = struct
     let d  = make_domain_intersection a (domain_neg a d1) (domain_neg a d2) in
     a, domain_neg a d
 
-  let make_domain_from_expr var_name ctx e =
+  let rec make_domain_from_expr var_name ctx e =
     let model, assum, actx = ctx in
     let array_init = Arrays.mk_full_subdiv actx (Ninf, Pinf) in
     match e with
@@ -358,40 +376,56 @@ module LA_SMT = struct
     | IEquality(a, IVar(v, n)) when v = var_name -> ctx, [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
     | IEquality(IVar(v, n), a) when v = var_name -> ctx, [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
     | Greater(a, b) ->
-      let a_val = get_val_from_model model a and
-      b_val = get_val_from_model model b in
-      if a_val >= b_val then
-        begin
-          assum#assume (Greater(a, b));
-          ctx, [array_init, (Ninf, Pinf)]
-        end
+      if a = b then
+        ctx, [array_init, (Ninf, Pinf)]
       else
-        begin
-          assum#assume (Greater(b, plus_one b));
-          ctx, []
-        end
+        let a_val = get_val_from_model model a and
+        b_val = get_val_from_model model b in
+        if a_val >= b_val then
+          begin
+            assum#assume (Greater(a, b));
+            ctx, [array_init, (Ninf, Pinf)]
+          end
+        else
+          begin
+            assum#assume (Greater(b, plus_one b));
+            ctx, []
+          end
     | IEquality(a, b) ->
-      let a_val = get_val_from_model model a and
-      b_val = get_val_from_model model b in
-      if a_val = b_val then
-        begin
-          assum#assume (IEquality(a, b));
-          ctx, [array_init, (Ninf, Pinf)]
-        end
-      else if a_val > b_val then
-        begin
-          assum#assume (Greater(a, plus_one b));
-          ctx, []
-        end
+      if a = b then
+        ctx, [array_init, (Ninf, Pinf)]
       else
-        begin
-          assum#assume (Greater(b, plus_one a));
-          ctx, []
-        end
+        let a_val = get_val_from_model model a and
+        b_val = get_val_from_model model b in
+        if a_val = b_val then
+          begin
+            assum#assume (IEquality(a, b));
+            ctx, [array_init, (Ninf, Pinf)]
+          end
+        else if a_val > b_val then
+          begin
+            assum#assume (Greater(a, plus_one b));
+            ctx, []
+          end
+        else
+          begin
+            assum#assume (Greater(b, plus_one a));
+            ctx, []
+          end
     | BEquality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2)) ->
       assert (index1 = IVar(var_name, 0));
       assert (index2 = IVar(var_name, 0));
-      ctx, [Arrays.equality_arrays actx tab1 tab2 (xor neg1 neg2) array_init, (Ninf, Pinf)]
+      ctx, [Arrays.equality_arrays actx tab1 tab2 (not @@ xor neg1 neg2) array_init, (Ninf, Pinf)]
+    | BEquality(Array_access(tab, index, neg), a) ->
+      assert (index = IVar(var_name, 0)); 
+      let a_val = get_val_from_model model a in
+      if a_val then
+        assum#assume(Bool(a))
+      else
+        assum#assume(Bool(not_term a));
+      ctx, [Arrays.equality_array actx tab (xor neg a_val) array_init, (Ninf, Pinf)]
+    | BEquality(a, Array_access(tab, index, neg)) ->
+      make_domain_from_expr var_name ctx (BEquality(Array_access(tab, index, neg), a))
     | BEquality(a, b) ->
       let a_val = get_val_from_model model a and
       b_val = get_val_from_model model b in
@@ -439,8 +473,13 @@ module LA_SMT = struct
         let a, d = make_domain_from_expr var_name a e in
         a, d
     in
-    let ctx, d = expr_to_domain_aux (model, im, !my_array_ctx) expr
-    in d
+    try
+      let ctx, d = expr_to_domain_aux (model, im, !my_array_ctx) expr
+      in d
+    with
+    | Not_found as e ->
+      Format.eprintf "Exception while computing domain for %s@." (expr_to_smt expr);
+      raise e
 
   let new_interval_manager () = new Interval_manager.interval_manager
 

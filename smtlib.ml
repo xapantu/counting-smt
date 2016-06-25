@@ -2,6 +2,7 @@ open Mixed_solver
 open Theory_model
 open LA_SMT
 open LA_SMT.Formula
+open Arith_array_language
 
 module Solver = Mixed_solver(LA_SMT)
 
@@ -11,10 +12,10 @@ type additional_defs =
 
 let fresh_var =
   let i = ref 0 in
-  fun () ->
+  fun ?sort:(sort=Int) () ->
   (incr i; let n = "card!" ^ string_of_int !i
            in
-           LA_SMT.use_var n Int; n)
+           LA_SMT.use_var n sort; n)
 
 exception Out
 exception Not_allowed of string
@@ -94,54 +95,59 @@ let rec (extract_quantified_var: string -> Lisp.lisp -> int * Lisp.lisp) = fun z
 (** z is the quantified variable name *)
 let rec lisp_to_expr ?z:(z="") ctx l =
   let open Lisp in
-  match l with
-  | Lisp_rec(Lisp_string "and" :: a :: b :: []) ->
-    And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
-  | Lisp_rec(Lisp_string "not" :: a :: []) ->
-    Not (lisp_to_expr ~z ctx a)
-  | Lisp_rec(Lisp_string "and" :: a :: q) ->
-    And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "and" :: q)))
-  | Lisp_rec(Lisp_string "or" :: a :: b :: []) ->
-    Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
-  | Lisp_rec(Lisp_string "or" :: a :: q) ->
-    Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
-  | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
-    Theory_expr (Bool (lisp_to_bool ~z ctx l))
-  | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
-    Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
-  | Lisp_rec(Lisp_string ">=" :: a :: b :: []) ->
-    let count_quantified_a, a = extract_quantified_var z a in
-    let count_quantified_b, b = extract_quantified_var z b in
-    let total_count = count_quantified_a - count_quantified_b in
-    if total_count = 1 then
+  try
+    match l with
+    | Lisp_rec(Lisp_string "and" :: a :: b :: []) ->
+      And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
+    | Lisp_rec(Lisp_string "not" :: a :: []) ->
+      Not (lisp_to_expr ~z ctx a)
+    | Lisp_rec(Lisp_string "and" :: a :: q) ->
+      And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "and" :: q)))
+    | Lisp_rec(Lisp_string "or" :: a :: b :: []) ->
+      Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
+    | Lisp_rec(Lisp_string "or" :: a :: q) ->
+      Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
+    | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
+      Theory_expr (Bool (lisp_to_bool ~z ctx l))
+    | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
+      Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
+    | Lisp_rec(Lisp_string ">=" :: a :: b :: []) ->
+      let count_quantified_a, a = extract_quantified_var z a in
+      let count_quantified_b, b = extract_quantified_var z b in
+      let total_count = count_quantified_a - count_quantified_b in
+      if total_count = 1 then
+        let transformed_expr =
+          Lisp_rec [Lisp_string ">="; Lisp_string z; Lisp_rec [Lisp_string "-"; b; a]] in
+        lisp_to_expr ~z ctx transformed_expr
+      else if total_count = -1 then
+        let transformed_expr =
+          Lisp_rec [Lisp_string ">="; Lisp_rec [Lisp_string "-"; a; b]; Lisp_string z] in
+        lisp_to_expr ~z ctx transformed_expr
+      else failwith "non unit coefficient in front of the quantified"
+    | Lisp_rec(Lisp_string ">" :: a :: b :: []) ->
       let transformed_expr =
-        Lisp_rec [Lisp_string ">="; Lisp_string z; Lisp_rec [Lisp_string "-"; b; a]] in
+        Lisp_rec [Lisp_string ">="; Lisp_rec [Lisp_string "-"; a; Lisp_int 1]; b] in
       lisp_to_expr ~z ctx transformed_expr
-    else if total_count = -1 then
-      let transformed_expr =
-        Lisp_rec [Lisp_string ">="; Lisp_rec [Lisp_string "-"; a; b]; Lisp_string z] in
-      lisp_to_expr ~z ctx transformed_expr
-    else failwith "non unit coefficient in front of the quantified"
-  | Lisp_rec(Lisp_string ">" :: a :: b :: []) ->
-    let transformed_expr =
-      Lisp_rec [Lisp_string ">="; Lisp_rec [Lisp_string "-"; a; Lisp_int 1]; b] in
-    lisp_to_expr ~z ctx transformed_expr
-  | Lisp_rec(Lisp_string "<" :: a :: b :: []) ->
-    lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">"; b; a])
-  | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
-    lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">="; b; a])
-  | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
-    begin
-      try
-        Theory_expr (IEquality (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
-      with
-      | Not_allowed_for_type(_, "int") ->
-        Theory_expr (BEquality (lisp_to_bool ~z ctx a, lisp_to_bool ~z ctx b))
-    end
-  | Lisp_true | Lisp_false | Lisp_string _ ->
-    Theory_expr (Bool (lisp_to_bool ~z ctx l))
-  | _ ->
-    raise (Not_allowed (lisp_to_string l))
+    | Lisp_rec(Lisp_string "<" :: a :: b :: []) ->
+      lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">"; b; a])
+    | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
+      lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">="; b; a])
+    | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
+      begin
+        try
+          Theory_expr (IEquality (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
+        with
+        | Not_allowed_for_type(_, "int") ->
+          Theory_expr (BEquality (lisp_to_bool ~z ctx a, lisp_to_bool ~z ctx b))
+      end
+    | Lisp_true | Lisp_false | Lisp_string _ ->
+      Theory_expr (Bool (lisp_to_bool ~z ctx l))
+    | _ ->
+      raise (Not_allowed (lisp_to_string l))
+  with
+  | TypeCheckingError(_) as e ->
+    Format.eprintf "error while typechecking %s@." @@ lisp_to_string l;
+    raise e
 and lisp_to_array =
   let open Lisp in
   function
@@ -172,6 +178,27 @@ let lisp_to_sort =
     Array(LA_SMT.get_range x, Bool)
   | e -> raise (Not_allowed_for_type (lisp_to_string e, "sort"))
 
+let rec type_of_lisp =
+  let open Lisp in
+  function
+  | Lisp_string a ->
+    get_sort a
+  | Lisp_int _ ->
+    Int
+  | Lisp_true | Lisp_false ->
+    Bool
+  | Lisp_rec (Lisp_string "and" :: q) | Lisp_rec (Lisp_string "true" ::q) ->
+    List.iter (fun l -> assert (type_of_lisp l = Bool)) q;
+    Bool
+  | Lisp_rec(Lisp_string "+" :: q) | Lisp_rec (Lisp_string "-" :: q) ->
+    List.iter (fun l -> assert (type_of_lisp l = Int)) q;
+    Int
+  | Lisp_rec (Lisp_string "select" :: a :: b) ->
+    Bool
+  | Lisp_rec (Lisp_string "store" :: a :: b) ->
+    type_of_lisp a
+  | _ -> failwith "couldn't infer type"
+
 let rec extract_cards l =
   let open Lisp in
   match l with
@@ -190,6 +217,47 @@ let rec extract_cards l =
       let ctx = ref [] in
       let formula = use_quantified_var z sort (fun a -> And(a, lisp_to_expr ~z ctx formula)) in
       Lisp_string (y), Card {var_name = y; expr = formula; quantified_var = z; quantified_sort = sort; } :: !ctx
+    | Lisp_rec (Lisp_string "select" :: a :: b :: [] ) ->
+      let a_extracted, defs_a = extract_cards a in
+      let b_extracted, defs_b = extract_cards b in
+      let array_sort = type_of_lisp a_extracted in
+      let element_sort = match array_sort with
+        | Array(_, Bool) -> Bool
+        | _ -> failwith "too complex array"
+      in
+      let y = fresh_var ~sort:element_sort () in
+      let card_var = fresh_var () in
+      let ctx = ref @@ defs_a @ defs_b in
+      let formula = use_quantified_var "z" Int (fun a ->
+          And(a, lisp_to_expr ctx (Lisp_rec [Lisp_string "and"; Lisp_rec [Lisp_string "="; Lisp_string "z"; b_extracted]; Lisp_rec[Lisp_string "="; Lisp_string y; Lisp_rec [Lisp_string "select"; a_extracted; Lisp_string "z"]]])))
+      in
+
+      Lisp_string y, Def (Lisp_rec [Lisp_string "="; Lisp_string card_var; Lisp_string "1"]) :: Card { var_name = card_var; expr = formula; quantified_var = "z"; quantified_sort = Int; } :: !ctx
+    | Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) ->
+      let a_extracted, defs_a = extract_cards a in
+      let b_extracted, defs_b = extract_cards b in
+      let c_extracted, defs_c = extract_cards c in
+      let array_sort = type_of_lisp a_extracted in
+      let array_size, index_sort = match array_sort with
+        | Array((Range(Expr a, Expr b)) as index_sort, Bool) -> (Lisp_rec [Lisp_string "-"; Lisp_string (term_to_string b); Lisp_string (term_to_string a)], index_sort)
+        | _ -> failwith "too complex array"
+      in
+      let result_of_store = fresh_var ~sort:array_sort () in
+      let card_var = fresh_var () in
+      let ctx = ref @@ defs_a @ defs_b @ defs_c in
+      let formula = use_quantified_var "z" index_sort (fun a ->
+          And(a,
+              lisp_to_expr ctx (
+                Lisp_rec [Lisp_string "or";
+                          Lisp_rec [Lisp_string "and"; Lisp_rec[Lisp_string "="; Lisp_string "z"; b_extracted]; Lisp_rec[Lisp_string "="; Lisp_rec[Lisp_string "select"; Lisp_string result_of_store; Lisp_string "z"]; c_extracted]];
+                          Lisp_rec [Lisp_string "and"; Lisp_rec[Lisp_string "not"; Lisp_rec[Lisp_string "="; Lisp_string "z"; b_extracted]];
+                                    Lisp_rec[Lisp_string "="; Lisp_rec [Lisp_string "select"; Lisp_string result_of_store; Lisp_string "z"];
+                                             Lisp_rec [Lisp_string "select"; a_extracted; Lisp_string "z"]
+                                            ]
+                                   ]
+                         ])))
+      in
+      Lisp_string result_of_store, Def (Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]) :: Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } :: !ctx
     | Lisp_rec (l) ->
       let l, cards = List.map extract_cards l |> List.split in
       Lisp_rec (l), List.concat cards

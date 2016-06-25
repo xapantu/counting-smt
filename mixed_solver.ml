@@ -5,7 +5,7 @@ module Mixed_solver (T: Theory_model.T) =
     let rec solve_starting_from_model cards m =
       let open List in
       let im = T.new_interval_manager () in
-      let all_assumptions =
+      let () =
         cards
         |> iter (fun c ->
                 let d = T.expr_to_domain im m c.quantified_var c.expr in

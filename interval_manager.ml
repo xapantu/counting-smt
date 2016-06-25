@@ -15,7 +15,29 @@ class interval_manager = object(this)
   val mutable ordering : int term list = []
                                           
   method assume a =
-    assumptions <- a :: assumptions
+    (* first some dumb simplification *)
+    let must_be_added =
+      not(List.mem a assumptions) &&
+      match a with
+      | IEquality(a, b) -> a <> b
+      | Greater(IVar(a,i), IVar(b, ib)) when a = b && i >= ib -> false
+      | Greater(a, b) ->
+        if List.mem(IEquality(a, b)) assumptions then
+          false
+            else if List.mem(IEquality(b, a)) assumptions then
+          false
+        else if List.mem (Greater(b, a)) assumptions then
+          begin
+            assumptions <- List.filter ((<>) (Greater(b, a))) assumptions;
+            assumptions <- IEquality(a, b) :: assumptions;
+            false
+          end
+        else
+          true
+      | _ -> true
+    in
+    if must_be_added then
+      assumptions <- a :: assumptions
 
   method assumptions = assumptions
 
@@ -35,7 +57,7 @@ class interval_manager = object(this)
 
   method get_slices_of_ordering (a, b) =
     let rec find_aux a ind b = match b with
-      | [] -> failwith (term_to_string a); raise Not_found
+      | [] -> failwith (term_to_string a)
       | t::q ->
         if t = a then ind
         else find_aux a (ind + 1) q
@@ -118,7 +140,8 @@ class interval_manager = object(this)
       (oracle:'a term -> 'a term -> int)
       (intersect_constraints: constraints -> constraints -> constraints)
       ((arr, (l1, u1)): constrained_interval)
-      (d2:constrained_domain) =
+      (d2:constrained_domain)
+    =
     let save_order = function
       | Expr a -> this#order oracle a
       | _ -> ()

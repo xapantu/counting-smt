@@ -1,6 +1,7 @@
 open Smtlib
 open OUnit2
 open Theory_model
+open Arith_array_language
 
 let test_domain_neg _ =
   let open LA_SMT in
