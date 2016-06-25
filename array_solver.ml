@@ -34,8 +34,8 @@ module Array_solver = struct
 
   let print_tree h =
     let rec aux s = function
-      | None -> Format.printf "%s -@." s
-      | Some a -> Format.printf "%s%s %s %s@." s a.name (selection_to_str a.left_selection) (selection_to_str a.right_selection); aux (s ^ a.var_left ^ "\t") a.left_tree; aux (s ^ a.var_right ^ "\t") a.right_tree
+      | None -> Format.eprintf "%s -@." s
+      | Some a -> Format.eprintf "%s%s %s %s@." s a.name (selection_to_str a.left_selection) (selection_to_str a.right_selection); aux (s ^ a.var_left ^ "\t") a.left_tree; aux (s ^ a.var_right ^ "\t") a.right_tree
     in
     aux "" h
   
@@ -82,7 +82,9 @@ module Array_solver = struct
         if s.name = name then
           if value then
             (
+              if s.left_selection = Dont_care then
               s.left_selection <- Unselected;
+              if s.right_selection = Dont_care then
               s.right_selection <- Selected;
 
               unselect_all s.left_tree;
@@ -90,7 +92,9 @@ module Array_solver = struct
             )
           else
             (
+              if s.right_selection = Dont_care then
               s.right_selection <- Unselected;
+              if s.left_selection = Dont_care then
               s.left_selection <- Selected;
 
               unselect_all s.right_tree;
@@ -98,8 +102,10 @@ module Array_solver = struct
             )
         else
           begin
-            s.left_tree <- find_node_aux s.left_tree;
-            s.right_tree <- find_node_aux s.right_tree;
+            if not (s.left_tree = None && s.left_selection = Unselected) then
+              s.left_tree <- find_node_aux s.left_tree;
+            if not (s.right_tree = None && s.right_selection = Unselected) then
+              s.right_tree <- find_node_aux s.right_tree;
           end
         end;
         Some s
@@ -249,8 +255,12 @@ module Array_solver = struct
     let rec neg_aux = function
       | None -> None
       | Some a ->
-      if a.left_tree = None || a.right_tree = None then
+      if a.left_tree = None && a.right_tree = None then
         Some { a with left_selection = neg a.left_selection; right_selection = neg a.right_selection; }
+      else if a.left_tree = None then
+        Some { a with left_selection = neg a.left_selection; right_tree = neg_aux a.right_tree; }
+      else if a.right_tree = None then
+        Some { a with left_tree = neg_aux a.left_tree; right_selection = neg a.right_selection; }
       else
         Some { a with left_tree = neg_aux a.left_tree; right_tree = neg_aux a.right_tree; }
     in
@@ -264,18 +274,14 @@ module Array_solver = struct
       |> assume ctx name1 true
       |> assume ctx name2 value
     in
-  let mysub2 =
+    let mysub2 =
       dont_care mysub
       |> array_sub_intersect ctx sub
       |> assume ctx name1 false
       |> assume ctx name2 (not value)
     in
-    print_tree mysub; print_tree mysub2;
-    print_tree (array_sub_neg ctx mysub);
-    print_tree (array_sub_neg ctx mysub2);
-    print_tree (array_sub_intersect ctx (array_sub_neg ctx mysub) (array_sub_neg ctx mysub2));
     let d = array_sub_neg ctx (array_sub_intersect ctx (array_sub_neg ctx mysub) (array_sub_neg ctx mysub2))
-  in d
+    in d
 
 
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun a b ->
@@ -290,8 +296,8 @@ module Array_solver = struct
     let rec all_true = function
       | None -> false
       | Some s ->
-         (s.left_tree = None && (s.left_selection = Selected || s.left_selection = Dont_care) || (all_true s.left_tree)) &&
-         (s.right_tree = None && (s.right_selection = Selected || s.right_selection = Dont_care) || (all_true s.right_tree))
+         ((s.left_tree = None && (s.left_selection = Selected || s.left_selection = Dont_care)) || (all_true s.left_tree)) &&
+         ((s.right_tree = None && (s.right_selection = Selected || s.right_selection = Dont_care)) || (all_true s.right_tree))
     in
     let prefix = List.map ( (^) "a!") prefix in
     let rec aux = function

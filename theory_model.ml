@@ -21,6 +21,8 @@ module type T = sig
 
 end
 
+let very_verbose = false
+
 module LA_SMT = struct
 
   exception Unknown_answer of string
@@ -54,7 +56,7 @@ module LA_SMT = struct
   let print_domain_debug =
     List.iter (fun (s, i) ->
         Arrays.print_tree s;
-        Format.printf "%s@." (inf_interval_to_string i);)
+        Format.eprintf "%s@." (inf_interval_to_string i);)
 
 
   module Formula = IFormula(struct
@@ -254,7 +256,7 @@ module LA_SMT = struct
         match v with
         | VBool(t) ->  Printf.fprintf stdout "%s = %b\n" b t
         | VInt(v) ->
-          if(String.length b <= 10000 || String.sub b 0 5 <> "card!") then Printf.fprintf stdout "%s = %d\n" b v)
+          if(String.length b <= 5 || String.sub b 0 5 <> "card!") then Printf.fprintf stdout "%s = %d\n" b v)
       m
 
   let rec seq (a, b) =
@@ -277,6 +279,8 @@ module LA_SMT = struct
       else
         Theory_expr(Bool(BValue(true)))
     in
+    if very_verbose then
+      interval_manager#print_ordering;
     let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
     let () =
       begin
@@ -355,7 +359,8 @@ module LA_SMT = struct
       compare (get_val_from_model (model_ctx ctx) a) (get_val_from_model (model_ctx ctx) b)
     in
     let d = (interval_manager ctx)#intersection_domains oracle (Arrays.array_sub_intersect (array_ctx ctx)) d1 d2 in
-    (* Format.printf "from@."; print_domain_debug d1; print_domain_debug d2; Format.printf "to@."; print_domain_debug d; *)
+    if very_verbose then
+      (Format.eprintf "from@."; print_domain_debug d1; print_domain_debug d2; Format.eprintf "to@."; print_domain_debug d); 
     d
 
   let domain_neg a d =
@@ -423,7 +428,7 @@ module LA_SMT = struct
         assum#assume(Bool(a))
       else
         assum#assume(Bool(not_term a));
-      ctx, [Arrays.equality_array actx tab (xor neg a_val) array_init, (Ninf, Pinf)]
+      ctx, [Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (Ninf, Pinf)]
     | BEquality(a, Array_access(tab, index, neg)) ->
       make_domain_from_expr var_name ctx (BEquality(Array_access(tab, index, neg), a))
     | BEquality(a, b) ->

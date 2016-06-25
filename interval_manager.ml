@@ -38,6 +38,10 @@ class interval_manager = object(this)
     in
     if must_be_added then
       assumptions <- a :: assumptions
+                    
+  method print_ordering =
+    List.iter (fun r ->
+        Format.eprintf "%s@." (term_to_string r)) ordering
 
   method assumptions = assumptions
 

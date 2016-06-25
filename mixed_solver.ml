@@ -7,8 +7,9 @@ module Mixed_solver (T: Theory_model.T) =
       let im = T.new_interval_manager () in
       let () =
         cards
-        |> iter (fun c ->
-                let d = T.expr_to_domain im m c.quantified_var c.expr in
+        |> map (fun c ->
+                c, T.expr_to_domain im m c.quantified_var c.expr)
+        |> iter (fun (c, d) ->
                 T.implies_card im c.var_name d;
                )
       in
