@@ -97,6 +97,8 @@ let rec lisp_to_expr ?z:(z="") ctx l =
   let open Lisp in
   try
     match l with
+    | Lisp_rec(Lisp_string "=>" :: a :: b :: []) ->
+      Or (lisp_to_expr ~z ctx b, Not(lisp_to_expr ~z ctx a))
     | Lisp_rec(Lisp_string "and" :: a :: b :: []) ->
       And (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx b)
     | Lisp_rec(Lisp_string "not" :: a :: []) ->
@@ -137,7 +139,8 @@ let rec lisp_to_expr ?z:(z="") ctx l =
         try
           Theory_expr (IEquality (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
         with
-        | Not_allowed_for_type(_, "int") ->
+        | Not_allowed_for_type(_, "int")
+        | TypeCheckingError(_, "int") ->
           Theory_expr (BEquality (lisp_to_bool ~z ctx a, lisp_to_bool ~z ctx b))
       end
     | Lisp_true | Lisp_false | Lisp_string _ ->
@@ -174,9 +177,19 @@ let lisp_to_sort =
   function
   | Lisp_string "Int" -> Int
   | Lisp_string "Bool" -> Bool
+  | Lisp_string "Real" -> Real
   | Lisp_rec(Lisp_string "Array" :: Lisp_string x :: Lisp_string "Bool" :: []) ->
     Array(LA_SMT.get_range x, Bool)
-  | e -> raise (Not_allowed_for_type (lisp_to_string e, "sort"))
+  | (Lisp_string a) as e ->
+    begin
+      try
+        LA_SMT.get_range a
+      with
+      | Not_found ->
+        raise (Not_allowed_for_type (lisp_to_string e, "sort"))
+    end
+  | e ->
+    raise (Not_allowed_for_type (lisp_to_string e, "sort"))
 
 let rec type_of_lisp =
   let open Lisp in
@@ -203,7 +216,10 @@ let rec extract_cards l =
   let open Lisp in
   match l with
     | Lisp_int _ | Lisp_string _ | Lisp_true | Lisp_false -> l, []
-    | Lisp_rec (Lisp_string "#" :: Lisp_string z :: Lisp_string sort :: formula :: []) ->
+    (* Accept any reasonable number of parenthesis *)
+    | Lisp_rec (Lisp_string "#" :: Lisp_string z :: Lisp_string sort :: formula :: [])
+    | Lisp_rec (Lisp_string "#" :: Lisp_rec(Lisp_string z :: Lisp_string sort :: []) :: formula :: [])
+    | Lisp_rec (Lisp_string "#" :: Lisp_rec(Lisp_rec (Lisp_string z :: Lisp_string sort :: []) :: []) :: formula :: []) ->
       let y = fresh_var () in
       let sort = match sort with
           | "Int" -> Int
@@ -273,7 +289,7 @@ let rec runner stdout lexing_stdin cards' =
       |> Lisp_parser.prog Lisp_lexer.read
       |> (fun lisp ->
           match lisp with
-            | Lisp_rec (Lisp_string "set-logic" :: _) ->
+            | Lisp_rec (Lisp_string "set-logic" :: _) | Lisp_rec (Lisp_string "set-info" :: _) ->
               lisp_to_string lisp
               |> LA_SMT.send_to_solver
             | Lisp_rec (Lisp_string "get-model" :: []) ->

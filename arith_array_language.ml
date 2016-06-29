@@ -29,6 +29,7 @@ type interval = bound * bound
 type sort =
   | Int
   | Bool
+  | Real
   | Array of sort * sort
   | Range of interval
 

@@ -24,8 +24,8 @@ let float = digit* frac? exp?
 (* part 3 *)
 let white = [' ' '\t']+
 let newline = '\r' | '\n' | "\r\n"
-let id = ['a'-'z' 'A'-'Z' '_' '=' '*' '>' '-' '#' '+' '<'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '-' '!' '>' '=']*
-let all_chars = ['a'-'z' 'A'-'Z' '0'-'9' '_' '-' '!' '>' '=' ',' ' ' ':'  '<']*
+let id = ['a'-'z' 'A'-'Z' '_' '=' '*' '>' '-' '#' '+' '<' ':'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '-' '!' '>' '=']*
+let all_chars = ['a'-'z' 'A'-'Z' '0'-'9' '_' '-' '!' '>' '=' ',' ' ' ':'  '<' '.']*
 
 (* part 4 *)
 rule read =
@@ -33,11 +33,13 @@ rule read =
   | white    { read lexbuf }
   | newline  { next_line lexbuf; read lexbuf }
   | int      { INT (int_of_string (Lexing.lexeme lexbuf)) }
+  | float    { QUOTED (Lexing.lexeme lexbuf) }
   | "true"   { TRUE }
   | "false"  { FALSE }
   | id      { STRING  (Lexing.lexeme lexbuf) }
   | '('      { LEFT_BRACE }
   | ')'      { RIGHT_BRACE }
   | '"' all_chars '"' { QUOTED (Lexing.lexeme lexbuf) }
+  | '|' all_chars '|' { QUOTED (Lexing.lexeme lexbuf) }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
   | eof { EOF }

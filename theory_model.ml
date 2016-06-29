@@ -26,8 +26,9 @@ let very_verbose = false
 module LA_SMT = struct
 
   exception Unknown_answer of string
+  exception Unknown_sort of string
   exception Unsat
-  exception TypeCheckingError of string
+  exception TypeCheckingError of string * string
 
   module Arrays = Array_solver.Array_solver
   type model = Arith_array_language.model
@@ -98,9 +99,16 @@ module LA_SMT = struct
     | Bool ->
       let () = vars := (Bool, name) :: !vars in
       send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
+    | Real ->
+      let () = vars := (Real, name) :: !vars in
+      send_to_solver @@ "(declare-fun " ^ name ^ " () Real)"
+    | (Range(Expr a, Expr b)) as e ->
+      let () = vars := (e, name) :: !vars in
+      send_to_solver @@ "(declare-fun " ^ name ^ " () Int)";
+      send_to_solver @@ Format.sprintf "(assert (and (<= %s %s) (< %s %s)))" (term_to_string a) name name (term_to_string b)
     | Array(Range(_, _), Bool) as e ->
       vars := (e, name) :: !vars
-    | _ -> failwith "Too complex array type"
+    | e -> failwith "Too complex array type"
 
 
   let v = ref 0
@@ -152,16 +160,19 @@ module LA_SMT = struct
       a
 
   let get_sort name =
+    try
     fst @@ List.find (fun (s, n) -> name = n) !vars
+    with
+    | Not_found -> raise (Unknown_sort(name))
 
   let ensure_int name =
     match get_sort name with
     | Int | Range(_) -> ()
-    | _ -> raise (TypeCheckingError name)
+    | _ -> raise (TypeCheckingError (name, "int"))
 
   let ensure_bool name =
     if get_sort name = Bool then ()
-    else raise (TypeCheckingError name)
+    else raise (TypeCheckingError (name, "bool"))
 
 
   let rec is_sat () =
@@ -330,7 +341,7 @@ module LA_SMT = struct
         let k = snd @@ List.find (fun (v,b) -> v = a) model in
         match k with
         | VInt(k) -> k+i
-        | _ -> raise (TypeCheckingError a)
+        | _ -> raise (TypeCheckingError (a, "int"))
       end
     | IValue(i) -> i
     | BValue(b) -> b
@@ -339,7 +350,7 @@ module LA_SMT = struct
         let k = snd @@ List.find (fun (v,b) -> v = a) model in
         match k with
         | VBool(k) -> (modi && k) || (not modi && not k)
-        | _ -> raise (TypeCheckingError a)
+        | _ -> raise (TypeCheckingError (a, "bool"))
       end
     | Array_access(Array_term(a), _, _) -> Format.eprintf "trying to get an array value from a model - should not happen: %s@." a; assert(false)
       | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
