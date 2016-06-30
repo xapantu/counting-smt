@@ -1,4 +1,4 @@
-true: use_menhir, package(unix), annot
+true: use_menhir, package(unix), annot, package(str)
 <tests*>: package(oUnit)
 <exttests*>: package(str)
 <exttests/*>: for-pack(Exttests)

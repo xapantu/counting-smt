@@ -67,15 +67,21 @@ let rec term_to_string : type a. a term -> string = function
     Format.eprintf "this array should not be printed@.";
     Format.sprintf "(select %s %s)" tab index
 
+let replace input output =
+      Str.global_replace (Str.regexp_string input) output
+
+let sanitize s =
+  replace "." "" s |> replace "|" ""
+
 
 let rec term_to_uid : type a. a term -> string = function
-  | IVar (s, 0) -> s
-  | IVar (s, i) when i > 0 -> Format.sprintf "!plus!%s!%d!" s i
-  | IVar (s, i) (* when i < 0 *) -> Format.sprintf "!minus!%s!%d!" s (-i)
+  | IVar (s, 0) -> (sanitize s)
+  | IVar (s, i) when i > 0 -> Format.sprintf "!plus!%s!%d!" (sanitize s) i
+  | IVar (s, i) (* when i < 0 *) -> Format.sprintf "!minus!%s!%d!" (sanitize s) (-i)
   | BValue(false) -> "false"
   | BValue(true) -> "true"
-  | BVar(s, true) -> s
-  | BVar(s, false) -> Format.sprintf "!not!%s!" s
+  | BVar(s, true) -> (sanitize s)
+  | BVar(s, false) -> Format.sprintf "!not!%s!" (sanitize s)
   | IValue i -> string_of_int i
   | Array_term e ->
     raise (Unprintable_elements e)

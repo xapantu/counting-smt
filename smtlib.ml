@@ -198,7 +198,7 @@ let rec type_of_lisp =
     get_sort a
   | Lisp_int _ ->
     Int
-  | Lisp_true | Lisp_false ->
+  | Lisp_true | Lisp_false | Lisp_rec (Lisp_string "not" :: _) ->
     Bool
   | Lisp_rec (Lisp_string "#" :: q) ->
     Int (* anyway, a lot of check will be run or q later *)
@@ -216,7 +216,7 @@ let rec type_of_lisp =
     type_of_lisp a
   | l -> failwith ("couldn't infer type for " ^ (lisp_to_string l))
 
-let rec extract_cards l =
+let rec extract_cards ?z:(z="") l =
   let open Lisp in
   match l with
     | Lisp_int _ | Lisp_string _ | Lisp_true | Lisp_false -> l, []
@@ -235,9 +235,12 @@ let rec extract_cards l =
             | Not_found -> raise (Type_not_allowed_for_counting a)
       in
       let ctx = ref [] in
-      let formula = use_quantified_var z sort (fun a -> And(a, lisp_to_expr ~z ctx formula)) in
+      let formula = use_quantified_var z sort (fun a ->
+          let formula_extracted, defs_formula = extract_cards ~z:z formula in
+          ctx := defs_formula;
+          And(a, lisp_to_expr ~z ctx formula_extracted)) in
       Lisp_string (y), Card {var_name = y; expr = formula; quantified_var = z; quantified_sort = sort; } :: !ctx
-    | Lisp_rec (Lisp_string "select" :: a :: b :: [] ) ->
+    | Lisp_rec (Lisp_string "select" :: a :: b :: [] ) when b <> Lisp_string z ->
       let a_extracted, defs_a = extract_cards a in
       let b_extracted, defs_b = extract_cards b in
       let array_sort = type_of_lisp a_extracted in
@@ -253,7 +256,7 @@ let rec extract_cards l =
       in
 
       Lisp_string y, Def (Lisp_rec [Lisp_string "="; Lisp_string card_var; Lisp_string "1"]) :: Card { var_name = card_var; expr = formula; quantified_var = "z"; quantified_sort = Int; } :: !ctx
-    | Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) ->
+    | Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) when b <> Lisp_string z ->
       let a_extracted, defs_a = extract_cards a in
       let b_extracted, defs_b = extract_cards b in
       let c_extracted, defs_c = extract_cards c in
@@ -292,14 +295,14 @@ let rec extract_cards l =
               And(constraint_on_sort, lisp_to_expr ctx (Lisp_rec [Lisp_string "="; Lisp_rec [Lisp_string "select"; a_extracted; Lisp_string "z"]; Lisp_rec [Lisp_string "select"; b_extracted; Lisp_string "z"]])))
           in
           let card_var = fresh_var () in
-          Lisp_string result_of_equality, Def(Lisp_rec[Lisp_string "="; array_size; Lisp_string card_var]) :: Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } :: !ctx
+          Lisp_string result_of_equality, Def(Lisp_rec[Lisp_string "=>"; Lisp_string result_of_equality; Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]]) :: Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } :: !ctx
         | e -> 
-          let a_extracted, defs_a = extract_cards a in
-          let b_extracted, defs_b = extract_cards b in
+          let a_extracted, defs_a = extract_cards ~z a in
+          let b_extracted, defs_b = extract_cards ~z b in
           Lisp_rec[Lisp_string "="; a_extracted; b_extracted], defs_a @ defs_b
       end
     | Lisp_rec (l) ->
-      let l, cards = List.map extract_cards l |> List.split in
+      let l, cards = List.map (extract_cards ~z) l |> List.split in
       Lisp_rec (l), List.concat cards
 
 let lexing = Lexing.from_channel

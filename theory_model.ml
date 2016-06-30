@@ -186,8 +186,9 @@ module LA_SMT = struct
 
   (* true if this variable is seen by the underlying solver (such as yices). For instance,
    * at this moment, arrays are not seen. *)
-  let var_is_raw (sort, name) =
-    sort = Int || sort = Bool
+  let var_is_raw (sort, name) = match sort with
+    | Int | Bool | Range(_) | Real -> true
+    | _ -> false
 
   let get_model () =
     send_to_solver @@ Format.sprintf "(get-value (%s))" (List.filter var_is_raw !vars |> List.map snd |> String.concat " ");
@@ -338,10 +339,13 @@ module LA_SMT = struct
   let get_val_from_model: type a. model -> a term -> a = fun model -> function
     | IVar(a, i) ->
       begin
+        try
         let k = snd @@ List.find (fun (v,b) -> v = a) model in
         match k with
         | VInt(k) -> k+i
         | _ -> raise (TypeCheckingError (a, "int"))
+        with
+        | Not_found -> failwith ("couldn't get variable " ^ a ^ "from model")
       end
     | IValue(i) -> i
     | BValue(b) -> b
@@ -429,8 +433,10 @@ module LA_SMT = struct
             ctx, []
           end
     | BEquality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2)) ->
-      assert (index1 = IVar(var_name, 0));
-      assert (index2 = IVar(var_name, 0));
+      if index1 <> IVar(var_name, 0) then
+        failwith (Format.sprintf "incorrect index %s" (term_to_string index1));
+      if index2 <> IVar(var_name, 0) then
+        failwith (Format.sprintf "incorrect index %s" (term_to_string index2));
       ctx, [Arrays.equality_arrays actx tab1 tab2 (not @@ xor neg1 neg2) array_init, (Ninf, Pinf)]
     | BEquality(Array_access(tab, index, neg), a) ->
       assert (index = IVar(var_name, 0)); 
@@ -489,13 +495,8 @@ module LA_SMT = struct
         let a, d = make_domain_from_expr var_name a e in
         a, d
     in
-    try
       let ctx, d = expr_to_domain_aux (model, im, !my_array_ctx) expr
       in d
-    with
-    | Not_found as e ->
-      Format.eprintf "Exception while computing domain for %s@." (expr_to_smt expr);
-      raise e
 
   let new_interval_manager () = new Interval_manager.interval_manager
 
