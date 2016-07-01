@@ -57,9 +57,32 @@ class interval_manager = object(this)
       in
       ordering <- insert_into ordering
 
-  method ordering = ordering
+  method fix_ordering =
+    let n = List.length ordering in
+    List.iter (function
+        | Greater(a, b) ->
+          let rec real_order a b found = function
+            | [] -> []
+            | t::q ->
+              if t = a then
+                b::(real_order a b found q)
+              else if t = b && found then
+                a::q
+              else if t = b then
+                t::q
+              else
+                real_order a b found q
+          in
+          ordering <- real_order b a false ordering
+        | _ -> ()) assumptions;
+    assert(n = List.length ordering)
+
+  method ordering =
+    this#fix_ordering;
+    ordering
 
   method get_slices_of_ordering (a, b) =
+    this#fix_ordering;
     let rec find_aux a ind b = match b with
       | [] -> failwith (term_to_string a)
       | t::q ->
