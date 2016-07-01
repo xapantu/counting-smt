@@ -229,8 +229,10 @@ module LA_SMT = struct
   let push f =
     send_to_solver "(push 1)";
     let old_v = !vars in
+    let old_array_ctx = Arrays.copy_ctx !my_array_ctx in
     f ();
     vars := old_v;
+    my_array_ctx := old_array_ctx;
     send_to_solver "(pop 1)"
 
   let solve_in_context f cont =

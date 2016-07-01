@@ -49,6 +49,13 @@ module Array_solver = struct
                      ensure_var_exists: string -> unit;
                    }
 
+  let copy_ctx ctx =
+    let rec cp = function
+      | None -> None
+      | Some s -> Some { s with left_tree = cp s.left_tree; right_tree = cp s.right_tree; }
+    in
+    { ctx with hyps = cp ctx.hyps }
+
   let new_array ctx name indexes =
     Hashtbl.add ctx.arrays name { name; indexes; }
 
