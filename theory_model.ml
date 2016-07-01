@@ -41,10 +41,6 @@ module LA_SMT = struct
 
   type domain = arrayed_domain
 
-  let bound_inf_to_string = function
-    | Ninf | Pinf -> "inf"
-    | Expr e -> term_to_string e
-
 
   let inf_interval_to_string (l, u) =
     "[" ^ bound_inf_to_string l ^ ", " ^ bound_inf_to_string u ^ "]"
@@ -54,10 +50,13 @@ module LA_SMT = struct
          (inf_interval_to_string i)) d
     |> String.concat ", "
 
-  let print_domain_debug =
+  let print_domain_debug l =
+    if List.length l > 0 then
     List.iter (fun (s, i) ->
         Arrays.print_tree s;
-        Format.eprintf "%s@." (inf_interval_to_string i);)
+        Format.eprintf "%s@." (inf_interval_to_string i);) l
+    else
+      Format.eprintf "(empty domain)@."
 
 
   module Formula = IFormula(struct
@@ -373,9 +372,11 @@ module LA_SMT = struct
     let oracle a b =
       compare (get_val_from_model (model_ctx ctx) a) (get_val_from_model (model_ctx ctx) b)
     in
+    if very_verbose then
+      (Format.eprintf "from@."; print_domain_debug d1; print_domain_debug d2);
     let d = (interval_manager ctx)#intersection_domains oracle (Arrays.array_sub_intersect (array_ctx ctx)) d1 d2 in
     if very_verbose then
-      (Format.eprintf "from@."; print_domain_debug d1; print_domain_debug d2; Format.eprintf "to@."; print_domain_debug d); 
+        (Format.eprintf "to@."; print_domain_debug d); 
     d
 
   let domain_neg a d =
@@ -389,6 +390,9 @@ module LA_SMT = struct
 
   let rec make_domain_from_expr var_name ctx e =
     let model, assum, actx = ctx in
+    let oracle a b =
+      compare (get_val_from_model (model_ctx ctx) a) (get_val_from_model (model_ctx ctx) b)
+    in
     let array_init = Arrays.mk_full_subdiv actx (Ninf, Pinf) in
     match e with
     | Greater(IVar(v, n), a) when v = var_name -> ctx, [array_init, (Expr (minus n a), Pinf)]
@@ -403,12 +407,12 @@ module LA_SMT = struct
         b_val = get_val_from_model model b in
         if a_val >= b_val then
           begin
-            assum#assume (Greater(a, b));
+            assum#assume_oracle oracle (Greater(a, b));
             ctx, [array_init, (Ninf, Pinf)]
           end
         else
           begin
-            assum#assume (Greater(b, plus_one b));
+            assum#assume_oracle oracle (Greater(b, plus_one b));
             ctx, []
           end
     | IEquality(a, b) ->
@@ -419,17 +423,17 @@ module LA_SMT = struct
         b_val = get_val_from_model model b in
         if a_val = b_val then
           begin
-            assum#assume (IEquality(a, b));
+            assum#assume_oracle oracle (IEquality(a, b));
             ctx, [array_init, (Ninf, Pinf)]
           end
         else if a_val > b_val then
           begin
-            assum#assume (Greater(a, plus_one b));
+            assum#assume_oracle oracle (Greater(a, plus_one b));
             ctx, []
           end
         else
           begin
-            assum#assume (Greater(b, plus_one a));
+            assum#assume_oracle oracle (Greater(b, plus_one a));
             ctx, []
           end
     | BEquality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2)) ->
@@ -442,7 +446,7 @@ module LA_SMT = struct
       assert (index = IVar(var_name, 0)); 
       let a_val = get_val_from_model model a in
       if a_val then
-        assum#assume(Bool(a))
+        assum#assume((Bool(a)):rel)
       else
         assum#assume(Bool(not_term a));
       ctx, [Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (Ninf, Pinf)]

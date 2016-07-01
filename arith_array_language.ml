@@ -122,3 +122,7 @@ let not_term: bool term -> bool term = function
   | BVar(s, k) -> BVar (s, not k)
   | Array_access(tab, index, k) -> Array_access(tab, index, not k)
 
+let bound_inf_to_string = function
+  | Ninf | Pinf -> "inf"
+  | Expr e -> term_to_string e
+

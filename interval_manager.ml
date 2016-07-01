@@ -20,11 +20,10 @@ class interval_manager = object(this)
       not(List.mem a assumptions) &&
       match a with
       | IEquality(a, b) -> a <> b
-      | Greater(IVar(a,i), IVar(b, ib)) when a = b && i >= ib -> false
       | Greater(a, b) ->
         if List.mem(IEquality(a, b)) assumptions then
           false
-            else if List.mem(IEquality(b, a)) assumptions then
+        else if List.mem(IEquality(b, a)) assumptions then
           false
         else if List.mem (Greater(b, a)) assumptions then
           begin
@@ -57,25 +56,29 @@ class interval_manager = object(this)
       in
       ordering <- insert_into ordering
 
+  method assume_oracle oracle a =
+    (match a with
+    | Greater (a, b) -> this#order oracle a; this#order oracle b;
+    | IEquality(a, b) -> this#order oracle a; this#order oracle b;
+    | _ -> (););
+    this#assume a
+
   method fix_ordering =
-    let n = List.length ordering in
     List.iter (function
         | Greater(a, b) ->
-          let rec real_order a b found = function
-            | [] -> []
-            | t::q ->
-              if t = a then
-                b::(real_order a b found q)
-              else if t = b && found then
-                a::q
-              else if t = b then
-                t::q
-              else
-                real_order a b found q
+          let index_of l a =
+            let rec index_of_aux i = function
+              | [] -> this#print_ordering; raise Not_found
+              | t::q -> if a = t then i else index_of_aux (i+1) q
+            in
+            index_of_aux 0 l
           in
-          ordering <- real_order b a false ordering
-        | _ -> ()) assumptions;
-    assert(n = List.length ordering)
+          let ai = index_of ordering a in
+          let bi = index_of ordering b in
+          if ai < bi then
+            ordering <- List.map (fun r -> if r = a then b else if r = b then a else r) ordering;
+        | _ -> ()) assumptions
+
 
   method ordering =
     this#fix_ordering;
@@ -173,6 +176,16 @@ class interval_manager = object(this)
       | Expr a -> this#order oracle a
       | _ -> ()
     in
+    let oracle a b =
+      let comp = oracle a b in
+      if comp > 0 then
+        (this#order oracle (plus_one b); this#assume (Greater(a, plus_one b)))
+      else if comp < 0 then
+        (this#order oracle (plus_one a); this#assume (Greater(b, plus_one a)))
+      else
+        this#assume (IEquality(a, b));
+      comp
+    in
     (* >= *)
     let greater a b =
       save_order a; save_order b;
@@ -182,11 +195,7 @@ class interval_manager = object(this)
         | Pinf, _  -> true
         | _, Pinf  -> false
         | Expr a, Expr b ->
-          let comp = oracle a b in
-          if comp >= 0 then
-            (this#assume (Greater(a, b)); true)
-          else
-            (this#assume (Greater(b, plus_one a)); this#order oracle (plus_one a); false)
+          oracle a b >= 0
     in
     let equal a b =
       save_order a; save_order b;
@@ -194,13 +203,7 @@ class interval_manager = object(this)
         | Ninf, Ninf -> true
         | Pinf, Pinf -> true
         | Expr a, Expr b ->
-          let comp = oracle a b in
-          if comp = 0 then
-            (this#assume (IEquality(a, b)); true)
-          else if comp  > 0 then
-            (this#assume (Greater(a, plus_one b)); this#order oracle (plus_one b); false)
-          else
-            (this#assume (Greater(b, plus_one a)); this#order oracle (plus_one a); false)
+          oracle a b = 0
         | _ -> false
     in
     let rec extract_inter = function
