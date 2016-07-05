@@ -16,6 +16,7 @@ module type T = sig
   val solve_formula: expr -> (model -> 'a) -> 'a
   val expr_to_domain: interval_manager -> model -> string -> expr -> domain
   val implies_card: interval_manager -> string -> domain -> unit
+  val implies_constraints: interval_manager -> unit
   val solve_assuming: interval_manager -> (model -> 'a) -> 'a
   val domain_to_str: domain -> string
 
@@ -111,7 +112,7 @@ module LA_SMT = struct
     let name = "array!" ^ (string_of_int !v) in
     Variable_manager.use_var Int name; name
 
-  let ensure_var_exists a =
+  let ensure_var_exists ?constraints:(constr=None) a =
     try
       ignore (List.find (fun (s, n) -> n = a) !Variable_manager.vars); ()
     with
@@ -229,7 +230,7 @@ module LA_SMT = struct
     if a = b then [a]
     else a :: seq (a+1, b)
 
-  let implies_card interval_manager cardinality_variable domain =
+  let implies_constraints interval_manager  =
     let rec ensure_arrays a = function
       | [] -> []
       | t::q ->
@@ -248,42 +249,44 @@ module LA_SMT = struct
     if very_verbose then
       interval_manager#print_ordering;
     let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
-    let () =
-      begin
-        try
-          domain
-          |> List.map (fun (sub, interval) ->
-              if Arrays.is_top sub then
-                [interval_to_string interval]
-              else
-                Arrays.array_sub_to_string !my_array_ctx (interval_manager#get_slices_of_ordering interval) sub interval
-            )
-          |> List.concat
-          |> List.filter ((<>) "0")
-          |> String.concat " "
-          |> (fun s ->
-              if s = "" then "0"
-              else s)
-          |> Format.sprintf "(+ %s 0)"
-          |> (fun res ->
-              And(constraint_sum, Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0))))
-            )
-          |> (fun resulting_expression ->
-              Format.sprintf "(=> %s %s)"
-                smt_assumptions
-                (expr_to_smt resulting_expression)
-            )
-        with
-        | Unbounded_interval ->
-          Format.sprintf "(=> %s false)" smt_assumptions
+    Format.sprintf "(=> %s %s)" smt_assumptions (expr_to_smt constraint_sum) |> assert_formula
 
-      end
-      |> assert_formula
-    in
-    ()
+  let implies_card interval_manager cardinality_variable domain =
+    let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
+    begin
+      try
+        domain
+        |> List.map (fun (sub, interval) ->
+            if Arrays.is_top sub then
+              [interval_to_string interval]
+            else
+              Arrays.array_sub_to_string !my_array_ctx (interval_manager#get_slices_of_ordering interval) sub interval
+          )
+        |> List.concat
+        |> List.filter ((<>) "0")
+        |> String.concat " "
+        |> (fun s ->
+            if s = "" then "0"
+            else s)
+        |> Format.sprintf "(+ %s 0)"
+        |> (fun res ->
+            Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0)))
+          )
+        |> (fun resulting_expression ->
+            Format.sprintf "(=> %s %s)"
+              smt_assumptions
+              (expr_to_smt resulting_expression)
+          )
+      with
+      | Unbounded_interval ->
+        Format.sprintf "(=> %s false)" smt_assumptions
+
+    end
+    |> assert_formula
 
 
   let solve_assuming im cont =
+    Format.eprintf "%d@." (List.length im#assumptions);
     solve_in_context (fun () ->
         assumptions_to_expr im#assumptions |> expr_to_smt |> assert_formula)
       cont

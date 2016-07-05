@@ -204,7 +204,10 @@ let rec extract_cards ?z:(z="") l =
       let ctx = ref @@ defs_a @ defs_b in
       let formula = Variable_manager.use_quantified_var "z" Int (fun a ->
           let f =
-            Format.sprintf "(and (= z %s) (= %s (select %s z)))" (lisp_to_string b_extracted) y (lisp_to_string a_extracted)
+            Format.sprintf "(and (= z %s) (= %s (select %s z)))"
+              (lisp_to_string b_extracted)
+              y
+              (lisp_to_string a_extracted)
             |> load_lisp_from_string
             |> lisp_to_expr ctx
           in
