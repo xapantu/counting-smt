@@ -126,3 +126,12 @@ let bound_inf_to_string = function
   | Ninf | Pinf -> "inf"
   | Expr e -> term_to_string e
 
+let inf_interval_to_string (l, u) =
+  "[" ^ bound_inf_to_string l ^ ", " ^ bound_inf_to_string u ^ "]"
+
+let rec sort_to_string = function
+  | Int -> "Int"
+  | Bool -> "Bool"
+  | Real -> "Real"
+  | Array(a, b) -> Format.sprintf "(%s -> %s)" (sort_to_string a) (sort_to_string b)
+  | Range(i) -> interval_to_string i

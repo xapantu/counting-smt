@@ -5,6 +5,8 @@ open LA_SMT.Formula
 open Arith_array_language
 
 module Solver = Mixed_solver(LA_SMT)
+module Variable_manager = LA_SMT.Variable_manager
+module Typing = Lisp_typechecking.Lisp_typechecking(Variable_manager)
 
 type additional_defs = 
   | Card of LA_SMT.Formula.card
@@ -15,45 +17,36 @@ let fresh_var =
   fun ?sort:(sort=Int) () ->
   (incr i; let n = "card!" ^ string_of_int !i
            in
-           LA_SMT.use_var n sort; n)
+           Variable_manager.use_var sort n; n)
 
 exception Out
 exception Not_allowed of string
 exception Not_allowed_for_type of string * string
 exception Type_not_allowed_for_counting of string
 
-let rec ensure_int_expr z =
-  let open Lisp in
-  function
-  | Lisp_rec(Lisp_string "-" :: a :: b :: []) | Lisp_rec(Lisp_string "+" :: a :: b :: []) ->
-    (ensure_int_expr z a; ensure_int_expr z b)
-  | Lisp_int(v) -> ()
-  | Lisp_string(v) ->
-    if v = z then
-      failwith "shouldn't have to ensure the type of a quantified variable"
-    else ensure_int v
-  | (Lisp_rec(_) as e)
-  | (Lisp_false as e) 
-  | (Lisp_true as e) ->
-    raise (Not_allowed_for_type(lisp_to_string e, "int"))
+let ensure_int_expr l =
+  match Typing.infer l with
+  | Int | Range(_) -> ()
+  | _ -> assert(false)
+
 
 let rec lisp_to_int_texpr ~z ctx =
   let open Lisp in
   function
-  | Lisp_string(z) -> (ensure_int z; IVar(z, 0))
+  | Lisp_string(z) -> (Variable_manager.ensure_int z; IVar(z, 0))
   | Lisp_int (v) -> IValue v
-  | Lisp_rec(Lisp_string "+" :: Lisp_string z :: Lisp_int i :: []) -> (ensure_int z; IVar(z, i))
-  | Lisp_rec(Lisp_string "-" :: Lisp_string z :: Lisp_int i :: []) -> (ensure_int z; IVar(z, -i))
-  | Lisp_rec(Lisp_string "+" :: Lisp_int i :: Lisp_string z :: []) -> (ensure_int z; IVar(z, i))
+  | Lisp_rec(Lisp_string "+" :: Lisp_string z :: Lisp_int i :: []) -> (Variable_manager.ensure_int z; IVar(z, i))
+  | Lisp_rec(Lisp_string "-" :: Lisp_string z :: Lisp_int i :: []) -> (Variable_manager.ensure_int z; IVar(z, -i))
+  | Lisp_rec(Lisp_string "+" :: Lisp_int i :: Lisp_string z :: []) -> (Variable_manager.ensure_int z; IVar(z, i))
   | Lisp_rec(Lisp_string "+" :: a :: b :: []) as e ->
     let subs = fresh_var () in
     ctx := (Def (Lisp_rec (Lisp_string "=" :: Lisp_string subs :: e :: []))) :: !ctx;
-    ensure_int_expr z a; ensure_int_expr z b;
+    ensure_int_expr a; ensure_int_expr b;
     IVar(subs, 0)
   | Lisp_rec(Lisp_string "-" :: a :: b :: []) as e ->
     let subs = fresh_var () in
     ctx := (Def (Lisp_rec (Lisp_string "=" :: Lisp_string subs :: e :: []))) :: !ctx;
-    ensure_int_expr z a; ensure_int_expr z b;
+    ensure_int_expr a; ensure_int_expr b;
     IVar(subs, 0)
   | a ->
     raise (Not_allowed_for_type (lisp_to_string a, "int"))
@@ -135,13 +128,14 @@ let rec lisp_to_expr ?z:(z="") ctx l =
     | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
       lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">="; b; a])
     | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
+      let s = Typing.infer a in
       begin
-        try
+        match s with
+        | Int | Range(_, _) ->
           Theory_expr (IEquality (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
-        with
-        | Not_allowed_for_type(_, "int")
-        | TypeCheckingError(_, "int") ->
+        | Bool ->
           Theory_expr (BEquality (lisp_to_bool ~z ctx a, lisp_to_bool ~z ctx b))
+        | _ -> assert(false)
       end
     | Lisp_true | Lisp_false | Lisp_string _ ->
       Theory_expr (Bool (lisp_to_bool ~z ctx l))
@@ -162,7 +156,7 @@ and lisp_to_bool ?z:(z="") ctx l =
   match l with
   | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
      Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b, true)
-  | Lisp_string(z) -> (ensure_bool z; BVar(z, true))
+  | Lisp_string(z) -> (Variable_manager.ensure_bool z; BVar(z, true))
   | Lisp_rec(Lisp_string "not" :: a :: []) ->
     let a = lisp_to_bool ~z ctx a in
     apply_not a
@@ -170,51 +164,6 @@ and lisp_to_bool ?z:(z="") ctx l =
   | Lisp_false -> BValue false
   | _ ->
     raise (Not_allowed_for_type (lisp_to_string l, "bool"))
-
-
-let lisp_to_sort =
-  let open Lisp in
-  function
-  | Lisp_string "Int" -> Int
-  | Lisp_string "Bool" -> Bool
-  | Lisp_string "Real" -> Real
-  | Lisp_rec(Lisp_string "Array" :: Lisp_string x :: Lisp_string "Bool" :: []) ->
-    Array(LA_SMT.get_range x, Bool)
-  | (Lisp_string a) as e ->
-    begin
-      try
-        LA_SMT.get_range a
-      with
-      | Not_found ->
-        raise (Not_allowed_for_type (lisp_to_string e, "sort"))
-    end
-  | e ->
-    raise (Not_allowed_for_type (lisp_to_string e, "sort"))
-
-let rec type_of_lisp =
-  let open Lisp in
-  function
-  | Lisp_string a ->
-    get_sort a
-  | Lisp_int _ ->
-    Int
-  | Lisp_true | Lisp_false | Lisp_rec (Lisp_string "not" :: _) ->
-    Bool
-  | Lisp_rec (Lisp_string "#" :: q) ->
-    Int (* anyway, a lot of check will be run or q later *)
-  | Lisp_rec (Lisp_string "and" :: q) | Lisp_rec (Lisp_string "true" ::q) ->
-    List.iter (fun l -> assert (type_of_lisp l = Bool)) q;
-    Bool
-  | Lisp_rec(Lisp_string "+" :: q) | Lisp_rec (Lisp_string "-" :: q) | Lisp_rec (Lisp_string "*" :: q) ->
-    List.iter (fun l -> if type_of_lisp l <> Int && type_of_lisp l <> Real then
-              failwith ("couldn't ensure type for " ^ (lisp_to_string l) ^ " is int")
-              ) q;
-    Int
-  | Lisp_rec (Lisp_string "select" :: a :: b) ->
-    Bool
-  | Lisp_rec (Lisp_string "store" :: a :: b) ->
-    type_of_lisp a
-  | l -> failwith ("couldn't infer type for " ^ (lisp_to_string l))
 
 let rec extract_cards ?z:(z="") l =
   let open Lisp in
@@ -230,12 +179,12 @@ let rec extract_cards ?z:(z="") l =
           | "Bool" -> Bool
           | a ->
             try
-              LA_SMT.get_range a
+              Variable_manager.get_range a
             with
             | Not_found -> raise (Type_not_allowed_for_counting a)
       in
       let ctx = ref [] in
-      let formula = use_quantified_var z sort (fun a ->
+      let formula = Variable_manager.use_quantified_var z sort (fun a ->
           let formula_extracted, defs_formula = extract_cards ~z:z formula in
           ctx := defs_formula;
           And(a, lisp_to_expr ~z ctx formula_extracted)) in
@@ -243,7 +192,7 @@ let rec extract_cards ?z:(z="") l =
     | Lisp_rec (Lisp_string "select" :: a :: b :: [] ) when b <> Lisp_string z ->
       let a_extracted, defs_a = extract_cards a in
       let b_extracted, defs_b = extract_cards b in
-      let array_sort = type_of_lisp a_extracted in
+      let array_sort = Typing.infer a_extracted in
       let element_sort = match array_sort with
         | Array(_, Bool) -> Bool
         | _ -> failwith "too complex array"
@@ -251,7 +200,7 @@ let rec extract_cards ?z:(z="") l =
       let y = fresh_var ~sort:element_sort () in
       let card_var = fresh_var () in
       let ctx = ref @@ defs_a @ defs_b in
-      let formula = use_quantified_var "z" Int (fun a ->
+      let formula = Variable_manager.use_quantified_var "z" Int (fun a ->
           And(a, lisp_to_expr ctx (Lisp_rec [Lisp_string "and"; Lisp_rec [Lisp_string "="; Lisp_string "z"; b_extracted]; Lisp_rec[Lisp_string "="; Lisp_string y; Lisp_rec [Lisp_string "select"; a_extracted; Lisp_string "z"]]])))
       in
 
@@ -260,7 +209,7 @@ let rec extract_cards ?z:(z="") l =
       let a_extracted, defs_a = extract_cards a in
       let b_extracted, defs_b = extract_cards b in
       let c_extracted, defs_c = extract_cards c in
-      let array_sort = type_of_lisp a_extracted in
+      let array_sort = Typing.infer a_extracted in
       let array_size, index_sort = match array_sort with
         | Array((Range(Expr a, Expr b)) as index_sort, Bool) -> (Lisp_rec [Lisp_string "-"; Lisp_string (term_to_string b); Lisp_string (term_to_string a)], index_sort)
         | _ -> failwith "too complex array"
@@ -268,7 +217,7 @@ let rec extract_cards ?z:(z="") l =
       let result_of_store = fresh_var ~sort:array_sort () in
       let card_var = fresh_var () in
       let ctx = ref @@ defs_a @ defs_b @ defs_c in
-      let formula = use_quantified_var "z" index_sort (fun a ->
+      let formula = Variable_manager.use_quantified_var "z" index_sort (fun a ->
           And(a,
               lisp_to_expr ctx (
                 Lisp_rec [Lisp_string "or";
@@ -282,7 +231,7 @@ let rec extract_cards ?z:(z="") l =
       in
       Lisp_string result_of_store, Def (Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]) :: Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } :: !ctx
     | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
-      let sort_a, sort_b = type_of_lisp a, type_of_lisp b in
+      let sort_a, sort_b = Typing.infer a, Typing.infer b in
       begin
         match sort_a, sort_b with
         | Array((Range(Expr l, Expr u)) as index_sort, _), Array(_) -> 
@@ -291,7 +240,7 @@ let rec extract_cards ?z:(z="") l =
           let ctx = ref @@ defs_a @ defs_b in
           let result_of_equality = fresh_var ~sort:Bool () in
           let array_size = Lisp_rec [Lisp_string "-"; Lisp_string (term_to_string u); Lisp_string (term_to_string l)] in
-          let formula = use_quantified_var "z" index_sort (fun constraint_on_sort ->
+          let formula = Variable_manager.use_quantified_var "z" index_sort (fun constraint_on_sort ->
               And(constraint_on_sort, lisp_to_expr ctx (Lisp_rec [Lisp_string "="; Lisp_rec [Lisp_string "select"; a_extracted; Lisp_string "z"]; Lisp_rec [Lisp_string "select"; b_extracted; Lisp_string "z"]])))
           in
           let card_var = fresh_var () in
@@ -327,11 +276,11 @@ let rec runner stdout lexing_stdin cards' =
                   | LA_SMT.Unsat -> Printf.fprintf stdout "unsat\n"
               end
             | Lisp_rec (Lisp_string "declare-fun" :: Lisp_string x :: Lisp_rec ([]) :: sort :: []) ->
-              LA_SMT.use_var x (lisp_to_sort sort)
+              Variable_manager.use_var (Typing.to_sort sort) x
             | Lisp_rec (Lisp_string "declare-range" :: Lisp_string x :: Lisp_rec (a :: b :: []) :: []) ->
               let a = lisp_to_int_texpr ~z:"" (ref []) a in
               let b = lisp_to_int_texpr ~z:"" (ref []) b in
-              LA_SMT.new_range x (Expr(a)) (Expr(b));
+              Variable_manager.new_range x (Expr(a)) (Expr(b));
             | Lisp_rec (Lisp_string "push" :: Lisp_int 1 :: []) ->
               LA_SMT.push (fun () -> runner stdout lexing_stdin !cards)
             | Lisp_rec (Lisp_string "pop" :: Lisp_int 1 :: []) | Lisp_rec (Lisp_string "exit" :: []) ->

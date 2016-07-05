@@ -23,12 +23,16 @@ end
 
 let very_verbose = false
 
+(* This theory uses an external solver to solve basic arithmetic
+ * and real stuff, and then sends new constraints to the solver for
+ * cardinality and arrays. *)
 module LA_SMT = struct
 
   exception Unknown_answer of string
   exception Unknown_sort of string
   exception Unsat
   exception TypeCheckingError of string * string
+  exception Bad_interval
 
   module Arrays = Array_solver.Array_solver
   type model = Arith_array_language.model
@@ -42,9 +46,6 @@ module LA_SMT = struct
   type domain = arrayed_domain
 
 
-  let inf_interval_to_string (l, u) =
-    "[" ^ bound_inf_to_string l ^ ", " ^ bound_inf_to_string u ^ "]"
-  
   let domain_to_str d =
     List.map (fun (s, i) ->
          (inf_interval_to_string i)) d
@@ -65,6 +66,8 @@ module LA_SMT = struct
       type tsort = sort
     end)
 
+  module Variable_manager = Variable_manager.Variable_manager(Formula)
+
   open Formula
 
   type expr = Formula.expr
@@ -75,10 +78,6 @@ module LA_SMT = struct
         And(l, Theory_expr(s))) (Theory_expr (List.hd l)) (List.tl l)
 
   type context = model * Interval_manager.interval_manager * Arrays.array_ctx
-
-  let vars = ref []
-  let range = Hashtbl.create 10
-  let get_range = Hashtbl.find range
 
   let solver_in, solver_out =
     let a, b = Unix.open_process solver_command
@@ -91,87 +90,41 @@ module LA_SMT = struct
     output_string !solver_out "\n";
     flush !solver_out
 
-  let use_var name = function
-    | Int ->
-      let () = vars := (Int, name) :: !vars in
-      send_to_solver @@ "(declare-fun " ^ name ^ " () Int)"
-    | Bool ->
-      let () = vars := (Bool, name) :: !vars in
-      send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
-    | Real ->
-      let () = vars := (Real, name) :: !vars in
-      send_to_solver @@ "(declare-fun " ^ name ^ " () Real)"
-    | (Range(Expr a, Expr b)) as e ->
-      let () = vars := (e, name) :: !vars in
-      send_to_solver @@ "(declare-fun " ^ name ^ " () Int)";
-      send_to_solver @@ Format.sprintf "(assert (and (<= %s %s) (< %s %s)))" (term_to_string a) name name (term_to_string b)
-    | Array(Range(_, _), Bool) as e ->
-      vars := (e, name) :: !vars
-    | e -> failwith "Too complex array type"
+  let define_new_variable =
+    React.iter Variable_manager.new_variables (fun (name, mytype) -> match mytype with
+        | Int ->
+          send_to_solver @@ "(declare-fun " ^ name ^ " () Int)"
+        | Bool ->
+          send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
+        | Real ->
+          send_to_solver @@ "(declare-fun " ^ name ^ " () Real)"
+        | Range(Expr a, Expr b) ->
+          send_to_solver @@ "(declare-fun " ^ name ^ " () Int)";
+          send_to_solver @@ Format.sprintf "(assert (and (<= %s %s) (< %s %s)))" (term_to_string a) name name (term_to_string b)
+        | Array(Range(_, _), Bool) -> ()
+        | e -> failwith "Too complex array type")
 
 
   let v = ref 0
   let fresh_var_array () =
     incr v;
     let name = "array!" ^ (string_of_int !v) in
-    use_var name Int; name
+    Variable_manager.use_var Int name; name
 
   let ensure_var_exists a =
     try
-      ignore (List.find (fun (s, n) -> n = a) !vars); ()
+      ignore (List.find (fun (s, n) -> n = a) !Variable_manager.vars); ()
     with
-    | Not_found -> use_var a Int
+    | Not_found -> Variable_manager.use_var Int a
   
   let my_array_ctx = ref (Arrays.new_ctx fresh_var_array ensure_var_exists)
-
-  let new_range: string -> bound -> bound -> unit =
-    fun name b1 b2 ->
-      Hashtbl.add range name (Range (b1, b2))
 
   let reset_solver () =
     close_in !solver_in; close_out !solver_out;
     let a, b = Unix.open_process solver_command
-    in solver_in := a; solver_out := b; vars := [];
-    Hashtbl.reset range; my_array_ctx := Arrays.new_ctx fresh_var_array ensure_var_exists
+    in solver_in := a; solver_out := b; Variable_manager.reset ();
+    my_array_ctx := Arrays.new_ctx fresh_var_array ensure_var_exists
 
-
-  let constraints_on_sort sort name = match sort with
-    | Int | Bool -> Theory_expr(Bool (BValue true))
-    | Range(Expr a, Expr b) -> And(Theory_expr(Greater(b, IVar(name, 1))), Theory_expr(Greater(IVar(name, 0), a)))
-    | Range(Ninf, Expr b) -> Theory_expr(Greater(b, IVar(name, 1)))
-    | Range(Expr a, Pinf) -> Theory_expr(Greater(IVar(name, 0), a))
-    | _ -> assert false
-
-  let use_quantified_var name sort f =
-      let () = vars := (sort, name) :: !vars in
-      let a = f (constraints_on_sort sort name) in
-      let first = ref true in
-      let () = vars := List.filter (fun x -> 
-          let (a, b) = x in
-          if b = name then
-            if !first then
-              (first := false; false)
-            else
-              true
-          else
-            true) !vars in
-      assert (not !first);
-      a
-
-  let get_sort name =
-    try
-    fst @@ List.find (fun (s, n) -> name = n) !vars
-    with
-    | Not_found -> raise (Unknown_sort(name))
-
-  let ensure_int name =
-    match get_sort name with
-    | Int | Range(_) -> ()
-    | _ -> raise (TypeCheckingError (name, "int"))
-
-  let ensure_bool name =
-    if get_sort name = Bool then ()
-    else raise (TypeCheckingError (name, "bool"))
 
 
   let rec is_sat () =
@@ -190,7 +143,7 @@ module LA_SMT = struct
     | _ -> false
 
   let get_model () =
-    send_to_solver @@ Format.sprintf "(get-value (%s))" (List.filter var_is_raw !vars |> List.map snd |> String.concat " ");
+    send_to_solver @@ Format.sprintf "(get-value (%s))" (List.filter var_is_raw !(Variable_manager.vars) |> List.map snd |> String.concat " ");
     let open Lisp in
     let get_var lisp =
       match lisp with
@@ -228,10 +181,10 @@ module LA_SMT = struct
 
   let push f =
     send_to_solver "(push 1)";
-    let old_v = !vars in
+    let old_v = !(Variable_manager.vars) in
     let old_array_ctx = Arrays.copy_ctx !my_array_ctx in
     f ();
-    vars := old_v;
+    Variable_manager.vars := old_v;
     my_array_ctx := old_array_ctx;
     send_to_solver "(pop 1)"
 
@@ -335,8 +288,6 @@ module LA_SMT = struct
         assumptions_to_expr im#assumptions |> expr_to_smt |> assert_formula)
       cont
 
-
-
   let get_val_from_model: type a. model -> a term -> a = fun model -> function
     | IVar(a, i) ->
       begin
@@ -358,9 +309,7 @@ module LA_SMT = struct
         | _ -> raise (TypeCheckingError (a, "bool"))
       end
     | Array_access(Array_term(a), _, _) -> Format.eprintf "trying to get an array value from a model - should not happen: %s@." a; assert(false)
-      | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
-
-  exception Bad_interval
+    | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
 
   let array_ctx (_, _, ctx) =
     ctx
