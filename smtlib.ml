@@ -29,6 +29,8 @@ let ensure_int_expr l =
   | Int | Range(_) -> ()
   | _ -> assert(false)
 
+let load_lisp_from_string s = 
+  Lisp_parser.prog Lisp_lexer.read (Lexing.from_string s)
 
 let rec lisp_to_int_texpr ~z ctx =
   let open Lisp in
@@ -201,35 +203,51 @@ let rec extract_cards ?z:(z="") l =
       let card_var = fresh_var () in
       let ctx = ref @@ defs_a @ defs_b in
       let formula = Variable_manager.use_quantified_var "z" Int (fun a ->
-          And(a, lisp_to_expr ctx (Lisp_rec [Lisp_string "and"; Lisp_rec [Lisp_string "="; Lisp_string "z"; b_extracted]; Lisp_rec[Lisp_string "="; Lisp_string y; Lisp_rec [Lisp_string "select"; a_extracted; Lisp_string "z"]]])))
+          let f =
+            Format.sprintf "(and (= z %s) (= %s (select %s z)))" (lisp_to_string b_extracted) y (lisp_to_string a_extracted)
+            |> load_lisp_from_string
+            |> lisp_to_expr ctx
+          in
+          And(a, f) 
+        )
       in
-
-      Lisp_string y, Def (Lisp_rec [Lisp_string "="; Lisp_string card_var; Lisp_string "1"]) :: Card { var_name = card_var; expr = formula; quantified_var = "z"; quantified_sort = Int; } :: !ctx
+      Lisp_string y,
+      Def (Lisp_rec [Lisp_string "="; Lisp_string card_var; Lisp_string "1"]) ::
+      Card { var_name = card_var; expr = formula; quantified_var = "z"; quantified_sort = Int; } ::
+      !ctx
     | Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) when b <> Lisp_string z ->
       let a_extracted, defs_a = extract_cards a in
       let b_extracted, defs_b = extract_cards b in
       let c_extracted, defs_c = extract_cards c in
       let array_sort = Typing.infer a_extracted in
       let array_size, index_sort = match array_sort with
-        | Array((Range(Expr a, Expr b)) as index_sort, Bool) -> (Lisp_rec [Lisp_string "-"; Lisp_string (term_to_string b); Lisp_string (term_to_string a)], index_sort)
+        | Array((Range(Expr a, Expr b)) as index_sort, Bool) ->
+          Lisp_rec [Lisp_string "-"; Lisp_string (term_to_string b); Lisp_string (term_to_string a)], index_sort
         | _ -> failwith "too complex array"
       in
       let result_of_store = fresh_var ~sort:array_sort () in
       let card_var = fresh_var () in
       let ctx = ref @@ defs_a @ defs_b @ defs_c in
       let formula = Variable_manager.use_quantified_var "z" index_sort (fun a ->
-          And(a,
-              lisp_to_expr ctx (
-                Lisp_rec [Lisp_string "or";
-                          Lisp_rec [Lisp_string "and"; Lisp_rec[Lisp_string "="; Lisp_string "z"; b_extracted]; Lisp_rec[Lisp_string "="; Lisp_rec[Lisp_string "select"; Lisp_string result_of_store; Lisp_string "z"]; c_extracted]];
-                          Lisp_rec [Lisp_string "and"; Lisp_rec[Lisp_string "not"; Lisp_rec[Lisp_string "="; Lisp_string "z"; b_extracted]];
-                                    Lisp_rec[Lisp_string "="; Lisp_rec [Lisp_string "select"; Lisp_string result_of_store; Lisp_string "z"];
-                                             Lisp_rec [Lisp_string "select"; a_extracted; Lisp_string "z"]
-                                            ]
-                                   ]
-                         ])))
+          let index = lisp_to_string b_extracted in
+          let f =
+            Format.sprintf "(or (and (= z %s) (= (select %s z) %s)) (and (not (= z %s)) (= (select %s z) (select %s z))))"
+              index
+              result_of_store
+              (lisp_to_string c_extracted)
+              index
+              result_of_store
+              (lisp_to_string a_extracted)
+            |> load_lisp_from_string
+            |> lisp_to_expr ctx
+          in
+          And(a, f)
+        )
       in
-      Lisp_string result_of_store, Def (Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]) :: Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } :: !ctx
+      Lisp_string result_of_store,
+      Def (Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]) ::
+      Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } ::
+      !ctx
     | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
       let sort_a, sort_b = Typing.infer a, Typing.infer b in
       begin
@@ -239,12 +257,30 @@ let rec extract_cards ?z:(z="") l =
           let b_extracted, defs_b = extract_cards b in
           let ctx = ref @@ defs_a @ defs_b in
           let result_of_equality = fresh_var ~sort:Bool () in
-          let array_size = Lisp_rec [Lisp_string "-"; Lisp_string (term_to_string u); Lisp_string (term_to_string l)] in
+          let array_size = Format.sprintf "(- %s %s)" (term_to_string u) (term_to_string l) in
           let formula = Variable_manager.use_quantified_var "z" index_sort (fun constraint_on_sort ->
-              And(constraint_on_sort, lisp_to_expr ctx (Lisp_rec [Lisp_string "="; Lisp_rec [Lisp_string "select"; a_extracted; Lisp_string "z"]; Lisp_rec [Lisp_string "select"; b_extracted; Lisp_string "z"]])))
+              let f =
+                Format.sprintf "(= (select %s z) (select %s z))"
+                  (lisp_to_string a_extracted)
+                  (lisp_to_string b_extracted)
+                |> load_lisp_from_string
+                |> lisp_to_expr ctx
+              in
+              And(constraint_on_sort, f)
+            )
           in
           let card_var = fresh_var () in
-          Lisp_string result_of_equality, Def(Lisp_rec[Lisp_string "=>"; Lisp_string result_of_equality; Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]]) :: Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } :: !ctx
+          let is_equal =
+            Format.sprintf "(=> %s (= %s %s))"
+              result_of_equality
+              array_size
+              card_var
+            |> load_lisp_from_string
+          in
+          Lisp_string result_of_equality,
+          Def (is_equal) ::
+          Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; }
+          :: !ctx
         | e -> 
           let a_extracted, defs_a = extract_cards ~z a in
           let b_extracted, defs_b = extract_cards ~z b in
