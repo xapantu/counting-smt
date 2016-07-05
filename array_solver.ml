@@ -18,11 +18,6 @@ module Array_solver = struct
     | Unselected
     | Dont_care
 
-  let selection_to_str = function
-    | Selected -> "sel"
-    | Unselected -> "uns"
-    | Dont_care ->  "don"
-
   (* false is left, true is right *)
   type hyp_tree = { name: string;
                     var_left: string;
@@ -31,13 +26,6 @@ module Array_solver = struct
                     mutable right_tree: hyp_tree option;
                     mutable left_selection: selection;
                     mutable right_selection: selection; }
-
-  let print_tree h =
-    let rec aux s = function
-      | None -> Format.eprintf "%s -@." s
-      | Some a -> Format.eprintf "%s%s %s %s@." s a.name (selection_to_str a.left_selection) (selection_to_str a.right_selection); aux (s ^ a.var_left ^ "\t") a.left_tree; aux (s ^ a.var_right ^ "\t") a.right_tree
-    in
-    aux "" h
   
   type domain = interval list
 
@@ -49,6 +37,25 @@ module Array_solver = struct
                      ensure_var_exists: string -> unit;
                    }
 
+  let selection_to_str = function
+    | Selected -> "sel"
+    | Unselected -> "uns"
+    | Dont_care ->  "don"
+
+  let print_tree h =
+    let rec aux prefix = function
+      | None -> Format.eprintf "%s -@." prefix
+      | Some a ->
+        Format.eprintf "%s%s %s %s@."
+          prefix
+          a.name
+          (selection_to_str a.left_selection)
+          (selection_to_str a.right_selection);
+        aux (prefix ^ a.var_left ^ "\t") a.left_tree;
+        aux (prefix ^ a.var_right ^ "\t") a.right_tree
+    in
+    aux "" h
+  
   let copy_ctx ctx =
     let rec cp = function
       | None -> None
@@ -61,12 +68,28 @@ module Array_solver = struct
 
   let new_ctx fresh_var ensure_var_exists =
     { arrays = Hashtbl.create 10; hyps = None; fresh_var; ensure_var_exists; }
+  
+  (* Set all selections in the subdivision as don't care *)
+  let rec reset_subdivision = function
+    | None -> None
+    | Some s ->
+      Some { s with left_selection = Dont_care;
+                    right_selection = Dont_care;
+                    left_tree = reset_subdivision s.left_tree;
+                    right_tree = reset_subdivision s.right_tree; }
 
+  (* Returns a tree where the array named `name` is assumed to be `value`
+   * (meaning that a leaf is unselected if `name` is not `value`) *)
   let assume ctx name value tree =
     let rec unselect_all = function
-      | Some s -> (s.left_selection <- Unselected; s.right_selection <- Unselected; unselect_all s.left_tree; unselect_all s.right_tree;)
+      | Some s ->
+        s.left_selection <- Unselected;
+        s.right_selection <- Unselected;
+        unselect_all s.left_tree;
+        unselect_all s.right_tree;
       | None -> ()
     in
+    (* Select leaves that were in a don't care state *)
     let rec select_dont_care = function
       | Some s ->
         begin
@@ -83,37 +106,38 @@ module Array_solver = struct
         end
       | None -> ()
     in
+    (* Recursively browse the tree to apply the assumption *)
     let rec find_node_aux = function
       | Some s -> 
         begin
-        if s.name = name then
-          if value then
-            (
-              if s.left_selection = Dont_care then
-              s.left_selection <- Unselected;
-              if s.right_selection = Dont_care then
-              s.right_selection <- Selected;
+          if s.name = name then
+            if value then
+              begin
+                if s.left_selection = Dont_care then
+                  s.left_selection <- Unselected;
+                if s.right_selection = Dont_care then
+                  s.right_selection <- Selected;
 
-              unselect_all s.left_tree;
-              select_dont_care s.right_tree;
-            )
+                unselect_all s.left_tree;
+                select_dont_care s.right_tree;
+              end
+            else
+              begin
+                if s.right_selection = Dont_care then
+                  s.right_selection <- Unselected;
+                if s.left_selection = Dont_care then
+                  s.left_selection <- Selected;
+
+                unselect_all s.right_tree;
+                select_dont_care s.left_tree;
+              end
           else
-            (
-              if s.right_selection = Dont_care then
-              s.right_selection <- Unselected;
-              if s.left_selection = Dont_care then
-              s.left_selection <- Selected;
-
-              unselect_all s.right_tree;
-              select_dont_care s.left_tree;
-            )
-        else
-          begin
-            if not (s.left_tree = None && s.left_selection = Unselected) then
-              s.left_tree <- find_node_aux s.left_tree;
-            if not (s.right_tree = None && s.right_selection = Unselected) then
-              s.right_tree <- find_node_aux s.right_tree;
-          end
+            begin
+              if not (s.left_tree = None && s.left_selection = Unselected) then
+                s.left_tree <- find_node_aux s.left_tree;
+              if not (s.right_tree = None && s.right_selection = Unselected) then
+                s.right_tree <- find_node_aux s.right_tree;
+            end
         end;
         Some s
       | None ->
@@ -132,10 +156,14 @@ module Array_solver = struct
     ctx.hyps <- new_tree;
     new_tree
   
-  let equality_array: array_ctx -> bool array term -> bool -> array_subdivision -> array_subdivision = fun ctx t value sub ->
-    let Array_term(name) = t in
-    assume ctx name value sub
+  (* This function is used to create a new subdivision where
+   * it is assumed that the array term is equal to the boolean *)
+  let equality_array: array_ctx -> bool array term -> bool -> array_subdivision -> array_subdivision =
+    fun ctx t value sub ->
+      let Array_term(name) = t in
+      assume ctx name value sub
 
+  (* Express the constraints needed for this subdivision to be consistent with the rest of the subdivision *)
   (* The first string argument is the prefix of the variable, for instance if one wants a constraints for every interval
    * the second one is the number of indices. *)
   let rec constraints_subdiv: array_ctx -> string -> string -> array_subdivision -> rel list = fun ctx prefix total a ->
@@ -190,7 +218,7 @@ module Array_solver = struct
         s @ constraints_total_sum
 
   (* the first subdivision must be smaller than the second one *)
-  let array_sub_intersect: array_ctx -> array_subdivision -> array_subdivision -> array_subdivision = fun ctx a b ->
+  let array_subdivision_intersection ctx a b =
     let rec intersect_aux a b =
       match a, b with
       | None, None -> None
@@ -234,26 +262,18 @@ module Array_solver = struct
     in
     intersect_aux a b
 
-  let array_sub_dup: array_subdivision -> array_subdivision = fun a ->
-    let rec dup_aux = function
-      | Some a ->
-      Some { a with left_tree = dup_aux a.left_tree; right_tree = dup_aux a.right_tree; }
-      | None -> None
-    in
-    dup_aux a
+  (* Returns a copy of the subdivision *)
+  let rec array_subdivision_duplicate = function
+    | Some a ->
+      Some { a with left_tree = array_subdivision_duplicate a.left_tree;
+                    right_tree = array_subdivision_duplicate a.right_tree; }
+    | None -> None
 
 
-
-  let dont_care a =
-    let rec aux = function
-      | None -> None
-      | Some s -> Some { s with left_selection = Dont_care; right_selection = Dont_care; left_tree = aux s.left_tree; right_tree = aux s.right_tree; }
-    in
-    aux a
-
-
-  let array_sub_neg: array_ctx -> array_subdivision -> array_subdivision = fun c a ->
-    let duplicated = array_sub_dup a in
+  (* Returns a subdivision which represents the negation of all
+   * the conjuctions in a given subdivision *)
+  let array_subdivision_negation ctx a =
+    let duplicated = array_subdivision_duplicate a in
     let neg = function
       | Selected -> Unselected
       | Unselected -> Selected
@@ -273,30 +293,42 @@ module Array_solver = struct
     in
     neg_aux duplicated
   
-  let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision -> array_subdivision = fun ctx t1 t2 value sub ->
+  (* `equality_arrays ctx t1 t2 v s` is  a subdivision where the two arrays are
+   * equal (or if v is false, where they are different), and consistent with
+   * the subdivision s *)
+  let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision -> array_subdivision =
+    fun ctx t1 t2 value sub ->
     let Array_term(name1) = t1
     and Array_term(name2) = t2 in
+    (* split the cases, for instance if value = true, t1 = true = t2, and then t1 = false = t2 *)
     let mysub =
-      array_sub_dup sub
+      array_subdivision_duplicate sub
       |> assume ctx name1 true
       |> assume ctx name2 value
     in
     let mysub2 =
-      dont_care mysub
-      |> array_sub_intersect ctx sub
+      reset_subdivision mysub
+      |> array_subdivision_intersection ctx sub
       |> assume ctx name1 false
       |> assume ctx name2 (not value)
     in
-    let d = array_sub_neg ctx (array_sub_intersect ctx (array_sub_neg ctx mysub) (array_sub_neg ctx mysub2))
-    in d
+    (* a \/ b = not (not a /\ not b) *)
+    array_subdivision_negation ctx
+      (array_subdivision_intersection ctx
+         (array_subdivision_negation ctx mysub)
+         (array_subdivision_negation ctx mysub2))
 
-
+  (* Plain new subdivision, with no assumptions *)
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun a b ->
-    array_sub_dup a.hyps |> dont_care
+    array_subdivision_duplicate a.hyps |> reset_subdivision
 
   let rec is_top: array_subdivision -> bool = function
     | None -> true
-    | Some a -> ((a.left_tree <> None || a.left_selection = Dont_care) && (a.right_tree <> None || a.right_selection = Dont_care) && is_top a.right_tree && is_top a.left_tree)
+    | Some a ->
+      ((a.left_tree <> None || a.left_selection = Dont_care) &&
+       (a.right_tree <> None || a.right_selection = Dont_care) &&
+       is_top a.right_tree &&
+       is_top a.left_tree)
 
 
   let array_sub_to_string ctx prefix sub interval =

@@ -376,7 +376,7 @@ module LA_SMT = struct
     in
     if very_verbose then
       (Format.eprintf "from@."; print_domain_debug d1; print_domain_debug d2);
-    let d = (interval_manager ctx)#intersection_domains oracle (Arrays.array_sub_intersect (array_ctx ctx)) d1 d2 in
+    let d = (interval_manager ctx)#intersection_domains oracle (Arrays.array_subdivision_intersection (array_ctx ctx)) d1 d2 in
     if very_verbose then
         (Format.eprintf "to@."; print_domain_debug d); 
     d
@@ -384,7 +384,7 @@ module LA_SMT = struct
   let domain_neg a d =
     let c = array_ctx a in
     let i = interval_manager a in
-    i#complementary_domain d (Arrays.array_sub_neg c) (Arrays.mk_full_subdiv c) Arrays.is_top
+    i#complementary_domain d (Arrays.array_subdivision_negation c) (Arrays.mk_full_subdiv c) Arrays.is_top
 
   let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) =
     let d  = make_domain_intersection a (domain_neg a d1) (domain_neg a d2) in
