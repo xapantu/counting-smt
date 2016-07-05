@@ -90,6 +90,11 @@ module LA_SMT = struct
       Format.printf " -> %s@." s;
     output_string !solver_out "\n";
     flush !solver_out
+  
+  let assert_formula str =
+    "(assert " ^ str ^ ")"
+    |> send_to_solver
+
 
   let define_new_variable =
     React.iter Variable_manager.new_variables (fun (name, mytype) -> match mytype with
@@ -116,7 +121,11 @@ module LA_SMT = struct
     try
       ignore (List.find (fun (s, n) -> n = a) !Variable_manager.vars); ()
     with
-    | Not_found -> Variable_manager.use_var Int a
+    | Not_found -> 
+      Variable_manager.use_var Int a;
+      match constr with
+      | None -> ()
+      | Some s -> assert_formula (rel_to_smt s)
   
   let my_array_ctx = ref (Arrays.new_ctx fresh_var_array ensure_var_exists)
 
@@ -208,10 +217,6 @@ module LA_SMT = struct
 
 
 
-  let assert_formula str =
-    "(assert " ^ str ^ ")"
-    |> send_to_solver
-
   let solve_formula expr cont =
     solve_in_context (fun () ->
         assert_formula @@ expr_to_smt expr
@@ -286,7 +291,6 @@ module LA_SMT = struct
 
 
   let solve_assuming im cont =
-    Format.eprintf "%d@." (List.length im#assumptions);
     solve_in_context (fun () ->
         assumptions_to_expr im#assumptions |> expr_to_smt |> assert_formula)
       cont

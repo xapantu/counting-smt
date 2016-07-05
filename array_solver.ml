@@ -34,7 +34,7 @@ module Array_solver = struct
   type array_ctx = { arrays: (string, my_array) Hashtbl.t;
                      mutable hyps: hyp_tree option;
                      fresh_var: unit -> string;
-                     ensure_var_exists: string -> unit;
+                     ensure_var_exists: ?constraints:rel option -> string -> unit;
                    }
 
   let selection_to_str = function
@@ -172,8 +172,8 @@ module Array_solver = struct
       | Some s ->
         let left_constraint, var_left = all_subdiv s.left_tree in
         let right_constraint, var_right = all_subdiv s.right_tree in
-        ctx.ensure_var_exists (prefix ^ s.var_left);
-        ctx.ensure_var_exists (prefix ^ s.var_right);
+        ctx.ensure_var_exists ~constraints:(Some (Greater (IVar(prefix ^ s.var_left, 0), IValue 0))) (prefix ^ s.var_left);
+        ctx.ensure_var_exists ~constraints:(Some (Greater (IVar(prefix ^ s.var_right, 0), IValue 0))) (prefix ^ s.var_right);
         let left_cond = if s.left_tree = None then
             ([Bool(BValue (true))] : rel list)
          else
@@ -192,30 +192,7 @@ module Array_solver = struct
     let constraints_total_sum = if additional = None then constraints_total_sum else
         IEquality(IVar(total, 0), IVar(unwrap additional, 0)) :: constraints_total_sum
     in
-    let rec extract_from_tree = function
-      | None -> []
-      | Some s ->
-        let left =
-          if s.left_tree = None then
-
-            (prefix ^ s.var_left) ::
-            extract_from_tree s.left_tree
-          else
-            extract_from_tree s.left_tree
-        in
-        let right =
-          if s.right_tree = None then
-            (prefix ^ s.var_right)::
-            extract_from_tree s.right_tree
-          else
-            extract_from_tree s.right_tree
-        in
-        left @ right
-    in
-    extract_from_tree a
-    |> List.map (fun s -> Greater(IVar(s, 0), IValue 0))
-    |> fun s ->
-        s @ constraints_total_sum
+    constraints_total_sum
 
   (* the first subdivision must be smaller than the second one *)
   let array_subdivision_intersection ctx a b =
