@@ -73,12 +73,20 @@ module LA_SMT = struct
 
   type expr = Formula.expr
 
+  type context = model * Interval_manager.interval_manager * Arrays.array_ctx
+  
+  let array_ctx (_, _, ctx) =
+    ctx
+
+  let model_ctx (m, _, _) = m
+
+  let interval_manager (_, i, _) =
+    (i:Interval_manager.interval_manager)
+
   let assumptions_to_expr l =
     if l = [] then Theory_expr (Bool(BValue(true)))
         else List.fold_left (fun l s ->
         And(l, Theory_expr(s))) (Theory_expr (List.hd l)) (List.tl l)
-
-  type context = model * Interval_manager.interval_manager * Arrays.array_ctx
 
   let solver_in, solver_out =
     let a, b = Unix.open_process solver_command
@@ -97,7 +105,8 @@ module LA_SMT = struct
 
 
   let define_new_variable =
-    React.iter Variable_manager.new_variables (fun (name, mytype) -> match mytype with
+    React.iter Variable_manager.new_variables (fun (name, mytype) ->
+        match mytype with
         | Int ->
           send_to_solver @@ "(declare-fun " ^ name ^ " () Int)"
         | Bool ->
@@ -111,11 +120,12 @@ module LA_SMT = struct
         | e -> failwith "Too complex array type")
 
 
-  let v = ref 0
-  let fresh_var_array () =
-    incr v;
-    let name = "array!" ^ (string_of_int !v) in
-    Variable_manager.use_var Int name; name
+  let fresh_var_array =
+    let v = ref 0 in
+    fun () ->
+      incr v;
+      let name = "array!" ^ (string_of_int !v) in
+      Variable_manager.use_var Int name; name
 
   let ensure_var_exists ?constraints:(constr=None) a =
     try
@@ -315,16 +325,9 @@ module LA_SMT = struct
         | VBool(k) -> (modi && k) || (not modi && not k)
         | _ -> raise (TypeCheckingError (a, "bool"))
       end
-    | Array_access(Array_term(a), _, _) -> Format.eprintf "trying to get an array value from a model - should not happen: %s@." a; assert(false)
+    | Array_access(Array_term(a), _, _) ->
+      failwith (Format.sprintf "trying to get an array value from a model - should not happen: %s@." a)
     | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
-
-  let array_ctx (_, _, ctx) =
-    ctx
-
-  let model_ctx (m, _, _) = m
-
-  let interval_manager (_, i, _) =
-    (i:Interval_manager.interval_manager)
 
   let make_domain_intersection ctx (d1:arrayed_domain) (d2:arrayed_domain) =
     let oracle a b =
