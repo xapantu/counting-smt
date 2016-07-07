@@ -7,6 +7,8 @@ let solver_path = ref ""
 let solver_option = ref []
 
 let nocolor = ref false
+  
+let time = ref false
 
 let set_options_solver s =
   solver_option := s :: !solver_option
@@ -18,6 +20,7 @@ let specs = [
     "Set options for the solver (can be called multiple times)";
     "-os", Arg.String set_options_solver, "Alias for -op-solver";
     "-nocolor", Arg.Set nocolor, " disable colors in ouptut";
+    "-time", Arg.Set time, " output time informations";
   ]
 
 let alspecs = Arg.align specs
@@ -35,6 +38,8 @@ let cin =
     | None -> stdin
 
 let nocolor = !nocolor
+
+let time = !time
 
 let solver_path = 
   let sp = match !solver_path with

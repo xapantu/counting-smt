@@ -13,7 +13,10 @@ let read_file f res =
       if Filename.check_suffix f ".smt" then f
       else raise Exit
     in 
-    let cmd = Format.sprintf "./solver.native %s %s %s" 
+    let cmd = Format.sprintf (if time then
+                                "time ./solver.native %s %s %s" 
+                              else
+                                "./solver.native %s %s %s")
                              f solver_path solver_options in
     Format.printf "Testing : %s : @?" cmd;
     let out_cin = Unix.open_process_in cmd in
