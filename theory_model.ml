@@ -40,7 +40,8 @@ module LA_SMT = struct
   open Arith_array_language
 
 
-  type arrayed_interval = Arrays.array_subdivision * interval
+  type congruence = int * int list (* modulo * remainder *)
+  type arrayed_interval = (Arrays.array_subdivision * congruence) * interval
   type arrayed_domain = arrayed_interval list
   type interval_manager = Interval_manager.interval_manager
 
@@ -54,9 +55,9 @@ module LA_SMT = struct
 
   let print_domain_debug l =
     if List.length l > 0 then
-    List.iter (fun (s, i) ->
-        Arrays.print_tree s;
-        Format.eprintf "%s@." (inf_interval_to_string i);) l
+      List.iter (fun ((s, (m, r)), i) ->
+          Arrays.print_tree s;
+          Format.eprintf "%s [%d] = (%s)@." (inf_interval_to_string i) m (List.map string_of_int r |> String.concat ", ");) l
     else
       Format.eprintf "(empty domain)@."
 
@@ -271,7 +272,7 @@ module LA_SMT = struct
     begin
       try
         domain
-        |> List.map (fun (sub, interval) ->
+        |> List.map (fun ((sub, congruence), interval) ->
             if Arrays.is_top sub then
               [interval_to_string interval]
             else
@@ -335,7 +336,9 @@ module LA_SMT = struct
     in
     if very_verbose then
       (Format.eprintf "from@."; print_domain_debug d1; print_domain_debug d2);
-    let d = (interval_manager ctx)#intersection_domains oracle (Arrays.array_subdivision_intersection (array_ctx ctx)) d1 d2 in
+    let d = (interval_manager ctx)#intersection_domains oracle
+        (fun (arrays1, congruence1) (arrays2, congruence2) ->
+           Arrays.array_subdivision_intersection (array_ctx ctx) arrays1 arrays2, congruence1) d1 d2 in
     if very_verbose then
         (Format.eprintf "to@."; print_domain_debug d); 
     d
@@ -343,7 +346,13 @@ module LA_SMT = struct
   let domain_neg a d =
     let c = array_ctx a in
     let i = interval_manager a in
-    i#complementary_domain d (Arrays.array_subdivision_negation c) (Arrays.mk_full_subdiv c) Arrays.is_top
+    i#complementary_domain d
+      (fun (arrays1, congruence1) ->
+        Arrays.array_subdivision_negation c arrays1, congruence1)
+      (fun i ->
+         Arrays.mk_full_subdiv c i, (1, [0]))
+      (fun (a, (m, r)) ->
+        Arrays.is_top a && (m = List.length r))
 
   let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) =
     let d  = make_domain_intersection a (domain_neg a d1) (domain_neg a d2) in
@@ -355,21 +364,22 @@ module LA_SMT = struct
       compare (get_val_from_model (model_ctx ctx) a) (get_val_from_model (model_ctx ctx) b)
     in
     let array_init = Arrays.mk_full_subdiv actx (Ninf, Pinf) in
+    let auxiliary_constraints = array_init, (1, [0]) in
     match e with
-    | Greater(IVar(v, n), a) when v = var_name -> ctx, [array_init, (Expr (minus n a), Pinf)]
-    | Greater(a, IVar(v, n)) when v = var_name -> ctx, [array_init, (Ninf, Expr(minus (n-1) a))]
-    | IEquality(a, IVar(v, n)) when v = var_name -> ctx, [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
-    | IEquality(IVar(v, n), a) when v = var_name -> ctx, [array_init, (Expr(minus n a), Expr(minus (n-1) a))]
+    | Greater(IVar(v, n), a) when v = var_name -> ctx, [auxiliary_constraints, (Expr (minus n a), Pinf)]
+    | Greater(a, IVar(v, n)) when v = var_name -> ctx, [auxiliary_constraints, (Ninf, Expr(minus (n-1) a))]
+    | IEquality(a, IVar(v, n)) when v = var_name -> ctx, [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
+    | IEquality(IVar(v, n), a) when v = var_name -> ctx, [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
     | Greater(a, b) ->
       if a = b then
-        ctx, [array_init, (Ninf, Pinf)]
+        ctx, [auxiliary_constraints, (Ninf, Pinf)]
       else
         let a_val = get_val_from_model model a and
         b_val = get_val_from_model model b in
         if a_val >= b_val then
           begin
             assum#assume_oracle oracle (Greater(a, b));
-            ctx, [array_init, (Ninf, Pinf)]
+            ctx, [auxiliary_constraints, (Ninf, Pinf)]
           end
         else
           begin
@@ -378,14 +388,14 @@ module LA_SMT = struct
           end
     | IEquality(a, b) ->
       if a = b then
-        ctx, [array_init, (Ninf, Pinf)]
+        ctx, [auxiliary_constraints, (Ninf, Pinf)]
       else
         let a_val = get_val_from_model model a and
         b_val = get_val_from_model model b in
         if a_val = b_val then
           begin
             assum#assume_oracle oracle (IEquality(a, b));
-            ctx, [array_init, (Ninf, Pinf)]
+            ctx, [auxiliary_constraints, (Ninf, Pinf)]
           end
         else if a_val > b_val then
           begin
@@ -402,7 +412,7 @@ module LA_SMT = struct
         failwith (Format.sprintf "incorrect index %s" (term_to_string index1));
       if index2 <> IVar(var_name, 0) then
         failwith (Format.sprintf "incorrect index %s" (term_to_string index2));
-      ctx, [Arrays.equality_arrays actx tab1 tab2 (not @@ xor neg1 neg2) array_init, (Ninf, Pinf)]
+      ctx, [(Arrays.equality_arrays actx tab1 tab2 (not @@ xor neg1 neg2) array_init, (1, [0])), (Ninf, Pinf)]
     | BEquality(Array_access(tab, index, neg), a) ->
       assert (index = IVar(var_name, 0)); 
       let a_val = get_val_from_model model a in
@@ -410,7 +420,7 @@ module LA_SMT = struct
         assum#assume((Bool(a)):rel)
       else
         assum#assume(Bool(not_term a));
-      ctx, [Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (Ninf, Pinf)]
+      ctx, [(Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (1, [0])), (Ninf, Pinf)]
     | BEquality(a, Array_access(tab, index, neg)) ->
       make_domain_from_expr var_name ctx (BEquality(Array_access(tab, index, neg), a))
     | BEquality(a, b) ->
@@ -419,7 +429,7 @@ module LA_SMT = struct
       if a_val = b_val then
         begin
           assum#assume (BEquality(a, b));
-          ctx, [array_init, (Ninf, Pinf)]
+          ctx, [auxiliary_constraints, (Ninf, Pinf)]
         end
       else
         begin
@@ -428,13 +438,13 @@ module LA_SMT = struct
         end
     | Bool(Array_access(tab, index, neg)) ->
       (assert (index = IVar(var_name, 0));
-       ctx, [Arrays.equality_array actx tab neg array_init, (Ninf, Pinf)])
+       ctx, [(Arrays.equality_array actx tab neg array_init, (1, [0])), (Ninf, Pinf)])
     | Bool(a) ->
       let a_val = get_val_from_model model a in
       if a_val then
         begin
           assum#assume (Bool(a));
-          ctx, [array_init, (Ninf, Pinf)]
+          ctx, [auxiliary_constraints, (Ninf, Pinf)]
         end
       else
         begin

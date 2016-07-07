@@ -5,8 +5,9 @@ include Arith_array_language
 
 exception Bad_interval
 
-type constraints = Array_solver.array_subdivision
-type constrained_interval = Array_solver.array_subdivision * interval
+type congruence = int * (int list)
+type constraints = Array_solver.array_subdivision * congruence
+type constrained_interval = constraints * interval
 type constrained_domain = constrained_interval list
 
 class interval_manager = object(this)
