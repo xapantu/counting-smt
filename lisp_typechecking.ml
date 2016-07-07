@@ -18,7 +18,10 @@ module Lisp_typechecking(V:Variable_manager.VM) = struct
     | Lisp_rec (Lisp_string "and" :: q) | Lisp_rec (Lisp_string "true" ::q) ->
       List.iter (fun l -> assert (infer l = Bool)) q;
       Bool
-    | Lisp_rec(Lisp_string "+" :: q) | Lisp_rec (Lisp_string "-" :: q) | Lisp_rec (Lisp_string "*" :: q) ->
+    | Lisp_rec(Lisp_string "+" :: q)
+    | Lisp_rec (Lisp_string "-" :: q)
+    | Lisp_rec (Lisp_string "*" :: q)
+    | Lisp_rec (Lisp_string "mod" :: ((_ :: _ :: []) as q) ) ->
       List.iter (fun l -> if infer l <> Int && infer l <> Real then
                     failwith ("couldn't ensure type for " ^ (lisp_to_string l) ^ " is int")
                 ) q;

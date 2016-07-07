@@ -3,6 +3,7 @@ open Theory_model
 open LA_SMT
 open LA_SMT.Formula
 open Arith_array_language
+open Utils
 
 module Solver = Mixed_solver(LA_SMT)
 module Variable_manager = LA_SMT.Variable_manager
@@ -50,6 +51,8 @@ let rec lisp_to_int_texpr ~z ctx =
     ctx := (Def (Lisp_rec (Lisp_string "=" :: Lisp_string subs :: e :: []))) :: !ctx;
     ensure_int_expr a; ensure_int_expr b;
     IVar(subs, 0)
+  | Lisp_rec(Lisp_string "mod" :: q) ->
+    failwith "The only supported syntax for mod is (= (mod z a) b) where a and b are constants."
   | a ->
     raise (Not_allowed_for_type (lisp_to_string a, "int"))
 
@@ -129,6 +132,10 @@ let rec lisp_to_expr ?z:(z="") ctx l =
       lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">"; b; a])
     | Lisp_rec(Lisp_string "<=" :: a :: b :: []) ->
       lisp_to_expr ~z ctx (Lisp_rec [Lisp_string ">="; b; a])
+    | Lisp_rec (Lisp_string "=" :: (Lisp_rec (Lisp_string "mod" :: Lisp_string z' :: Lisp_int a :: [])) :: Lisp_int b :: [])
+      when z' = z && a > b ->
+      assert (a > 0);
+      Theory_expr (Mod (IVar(z, 0), modp b a, a))
     | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
       let s = Typing.infer a in
       begin

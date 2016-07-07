@@ -14,6 +14,7 @@ type concrete_value =
   | VInt of int
 
 type rel =
+  | Mod of int term * int * int
   | Greater of int term * int term
   | IEquality of int term * int term
   | BEquality of bool term * bool term
