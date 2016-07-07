@@ -9,6 +9,11 @@ type _ term =
   | Array_term : string -> bool array term
   | Array_access : bool array term * int term * bool (* last one is the negation *) -> bool term
 
+type arithmetic_expression =
+  | APlus of arithmetic_expression * arithmetic_expression
+  | AMinus of arithmetic_expression * arithmetic_expression
+  | ATerm of int term
+
 type concrete_value =
   | VBool of bool
   | VInt of int
@@ -98,12 +103,33 @@ let rec rel_to_smt = function
   | Bool(b) ->
     term_to_string b
 
-let bound_to_string = function
+let rec arith_expr_to_string = function
+  | ATerm e -> term_to_string e
+  | APlus(a, b) ->
+    let a = arith_expr_to_string a in
+    let b = arith_expr_to_string b in
+    if a = "0" then b 
+    else if b = "0" then a
+    else
+      Format.sprintf "(+ %s %s)" a b
+  | AMinus(a, b) ->
+    let a = arith_expr_to_string a in
+    let b = arith_expr_to_string b in
+    if a = "0" then
+      Format.sprintf "(- %s)" b 
+    else if b = "0" then
+      a
+    else
+      Format.sprintf "(- %s %s)" a b
+
+let bound_to_arith_expr = function
   | Ninf | Pinf -> raise Unbounded_interval
-  | Expr e -> term_to_string e
+  | Expr e -> ATerm e
+
+let bound_to_string e = arith_expr_to_string (bound_to_arith_expr e)
 
 let interval_to_string (l, u) =
-  Format.sprintf "(- %s %s)" (bound_to_string u) (bound_to_string l)
+  arith_expr_to_string (AMinus (bound_to_arith_expr u, bound_to_arith_expr l))
 
 let (plus_one: int term -> int term) = function
   | IVar(a, i) -> IVar(a, i + 1)

@@ -253,19 +253,18 @@ module LA_SMT = struct
             Arrays.(constraints_subdiv !my_array_ctx (term_to_uid a ^ "!" ^ term_to_uid t) (interval_to_string (Expr a, Expr t)) !my_array_ctx.hyps :: ensure_arrays t q)
     in
     let ordering = interval_manager#ordering in
-    let constraint_sum =
-      if List.length ordering >= 2 then
-        ensure_arrays (List.hd ordering) (List.tl ordering)
-        |> List.concat
-        |> List.fold_left (fun l s ->
-            And(l, Theory_expr(s))) (Theory_expr(Bool(BValue(true))))
-      else
-        Theory_expr(Bool(BValue(true)))
-    in
     if very_verbose then
       interval_manager#print_ordering;
-    let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
-    Format.sprintf "(=> %s %s)" smt_assumptions (expr_to_smt constraint_sum) |> assert_formula
+    if List.length ordering >= 2 then
+      let all_constraints = ensure_arrays (List.hd ordering) (List.tl ordering)
+                            |> List.concat
+      in
+      match all_constraints with
+      | t::q ->
+        let constraint_sum = List.fold_left (fun l s -> And(l, Theory_expr(s))) (Theory_expr t) q in
+        let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
+        Format.sprintf "(=> %s %s)" smt_assumptions (expr_to_smt constraint_sum) |> assert_formula
+      | [] -> ()
 
   let implies_card interval_manager cardinality_variable domain =
     let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
@@ -280,11 +279,13 @@ module LA_SMT = struct
           )
         |> List.concat
         |> List.filter ((<>) "0")
-        |> String.concat " "
-        |> (fun s ->
-            if s = "" then "0"
-            else s)
-        |> Format.sprintf "(+ %s 0)"
+        |> (fun l ->
+          match List.length l with
+            | 0 -> "0"
+            | 1 -> List.hd l
+            | _ ->
+              String.concat " " l
+              |> Format.sprintf "(+ %s)")
         |> (fun res ->
             Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0)))
           )

@@ -175,18 +175,18 @@ module Array_solver = struct
         ctx.ensure_var_exists ~constraints:(Some (Greater (IVar(prefix ^ s.var_left, 0), IValue 0))) (prefix ^ s.var_left);
         ctx.ensure_var_exists ~constraints:(Some (Greater (IVar(prefix ^ s.var_right, 0), IValue 0))) (prefix ^ s.var_right);
         let left_cond = if s.left_tree = None then
-            ([Bool(BValue (true))] : rel list)
+            []
          else
            IEquality (IVar(prefix ^ s.var_left, 0), IVar(unwrap var_left, 0)) :: left_constraint
         in
         let right_cond = if s.right_tree = None then
-            ([Bool(BValue (true))] : rel list)
+            []
          else
            IEquality (IVar(prefix ^ s.var_right,0), IVar(unwrap var_right, 0)) :: right_constraint
         in
         left_cond @ right_cond,
         Some (Format.sprintf "(+ %s%s %s%s)" prefix s.var_left prefix s.var_right)
-      | None -> [Bool(BValue(true))], None
+      | None -> [], None
     in
     let constraints_total_sum, additional = all_subdiv a in
     let constraints_total_sum = if additional = None then constraints_total_sum else
