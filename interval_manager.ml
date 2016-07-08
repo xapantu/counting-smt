@@ -13,14 +13,14 @@ type constrained_domain = constrained_interval list
 class interval_manager = object(this)
 
   val mutable assumptions : rel list  = []
-  val mutable ordering : int term list = []
+  val mutable ordering : int term list list = []
                                           
   method assume a =
     (* first some dumb simplification *)
     let must_be_added =
       not(List.mem a assumptions) &&
       match a with
-      | IEquality(a, b) -> a <> b
+      | IEquality(a, b) -> (not (List.mem (IEquality(b, a)) assumptions)) &&  a <> b
       | Greater(a, b) ->
         if List.mem(IEquality(a, b)) assumptions then
           false
@@ -37,16 +37,24 @@ class interval_manager = object(this)
       | _ -> true
     in
     if must_be_added then
-      assumptions <- a :: assumptions
+      ( if (rel_to_smt a) = "(>= (+ |s2.source| 1) (+ |s0.source| 1))" then raise Not_found;
+      assumptions <- a :: assumptions)
                     
+  method print_assumptions =
+    List.iter (fun l ->
+        Format.eprintf "%s@." (rel_to_smt l)) assumptions
+
   method print_ordering =
-    List.iter (fun r ->
-        Format.eprintf "%s@." (term_to_string r)) ordering
+    List.iter (fun l ->
+        List.map term_to_string l |> String.concat " " |> Format.eprintf "(%s)@.";
+      ) ordering
 
   method assumptions = assumptions
 
   method order oracle a =
-    if not (List.mem a ordering) then
+    assert (List.fold_left (fun l a -> l && List.length a = 1) true ordering);
+    let my_ordering = List.map List.hd ordering in
+    if not (List.mem a my_ordering) then
       let rec insert_into = function
         | [] -> [a]
         | t::q ->
@@ -55,7 +63,7 @@ class interval_manager = object(this)
           else
             t :: insert_into q
       in
-      ordering <- insert_into ordering
+      ordering <- List.map (fun a -> [a]) (insert_into my_ordering)
 
   method add_to_ordering (is_top:constraints -> bool) oracle domain =
     let save_order = function
@@ -66,12 +74,34 @@ class interval_manager = object(this)
         if not (is_top a) then
           (save_order l; save_order u;)) domain
 
+  method merge_ordering =
+    (* now merge every equal terms into a single class *)
+    List.iter (function
+        | IEquality(a, b) ->
+          (* needs a good union_find structure *)
+          let class_a = List.find (List.mem a) ordering in
+          let class_b = List.find (List.mem b) ordering in
+
+          if class_a <> class_b then
+            begin
+              ordering <- List.filter ((<>) class_a) ordering;
+              ordering <- List.map (fun c ->
+                  if c = class_b then
+                    class_a @ class_b
+                  else
+                    c) ordering
+            end
+        | _ -> ()) assumptions
+
   method fix_ordering oracle =
+    assert (List.fold_left (fun l a -> l && List.length a = 1) true ordering);
     List.iter (function
         | Greater(a, b) | IEquality(a, b) -> this#order oracle a; this#order oracle b
         | _ -> ()) assumptions;
+    assert (List.fold_left (fun l a -> l && List.length a = 1) true ordering);
     List.iter (function
         | Greater(a, b) ->
+          let a = [a] and b = [b] in
           let index_of l a =
             let rec index_of_aux i = function
               | [] -> raise Not_found
@@ -84,27 +114,42 @@ class interval_manager = object(this)
           if ai < bi then
             ordering <- List.map (fun r -> if r = a then b else if r = b then a else r) ordering;
         | _ -> ()) assumptions;
+    assert (List.fold_left (fun l a -> l && List.length a = 1) true ordering);
+    this#merge_ordering;
     (* Now check that the assumptions actually enforce the ordering *)
     let rec check_enough_assumptions = function
       | [] | _::[] -> ()
-      | t::q ->
-        check_enough_assumptions q;
+      | t::q'::q ->
+        check_enough_assumptions (q'::q);
         let assumed =
-          List.fold_left (fun found elt ->
-            found || List.mem (Greater(elt, t)) this#assumptions) false q in
+          List.fold_left 
+            (fun f t ->
+               f || List.fold_left (fun found elt ->
+            found || List.mem (Greater(elt, t)) this#assumptions) false q') false t in
         if not assumed then
-          this#assume (Greater(List.hd q, t))
+          let a = List.hd q' and b = List.hd t in
+          let c = oracle a b in
+          if c > 0 then
+            this#assume (Greater(a, b))
+          else if c = 0 then
+            this#assume (IEquality(a, b))
+          else
+            assert false
     in
-    check_enough_assumptions ordering
+    check_enough_assumptions ordering;
+    this#merge_ordering;
+    assert (List.fold_left (fun l a -> l && List.length a >= 1) true ordering)
           
   method ordering =
     ordering
 
   method get_slices_of_ordering (a, b) =
+    assert (List.fold_left (fun l a -> l && List.length a >= 1) true ordering);
+    let open List in
     let rec find_aux a ind b = match b with
       | [] -> failwith (term_to_string a)
       | t::q ->
-        if t = a then ind
+        if mem a t then ind
         else find_aux a (ind + 1) q
     in
     let a, b =
@@ -124,11 +169,11 @@ class interval_manager = object(this)
       if i = 0 && List.length ordering = 0 then
         res := "inf!inf" :: !res
       else if i = 0 then
-        res := ("inf!" ^ term_to_uid (List.nth ordering i)) :: !res
+        res := ("inf!" ^ term_to_uid (hd @@ List.nth ordering i)) :: !res
       else if i = List.length ordering then
-        res := (term_to_uid (List.nth ordering (i-1)) ^ "!inf") :: !res
+        res := (term_to_uid (hd @@ List.nth ordering (i-1)) ^ "!inf") :: !res
       else
-        res := (term_to_uid (List.nth ordering (i-1)) ^ "!" ^ term_to_uid (List.nth ordering i)) :: !res
+        res := (term_to_uid (hd @@ List.nth ordering (i-1)) ^ "!" ^ term_to_uid (hd @@ List.nth ordering i)) :: !res
     done;
     !res
   
@@ -208,7 +253,14 @@ class interval_manager = object(this)
       match a, b with
         | _, Ninf | Ninf, _ | Pinf, _  | _, Pinf  -> ()
         | Expr a, Expr b ->
-          this#assume (Greater (a, b))
+          let c = oracle a b in
+          if c > 0 then
+            this#assume (Greater (a, b))
+          else if c = 0 then
+            this#assume (IEquality (a, b))
+          else
+            assert false
+
     in
     let rec extract_inter = function
       | [] -> []
@@ -216,11 +268,9 @@ class interval_manager = object(this)
         let intersect_arrays = intersect_constraints arr arrays in
         (* the first two case mean that there is no intersection *)
         if greater l u1 > 0 then
-          (assume_greater l u1;
-             [])
+            (assume_greater l u1; [])
         else if greater  l1 u > 0 then
-          (assume_greater l1 u;
-           extract_inter q)
+            (assume_greater l1 u; extract_inter q)
         else (* so, there is an intersection here *)
           begin
             assume_greater u1 l; assume_greater u l1;

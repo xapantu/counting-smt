@@ -286,7 +286,7 @@ module LA_SMT = struct
       | t::q ->
             Arrays.(constraints_subdiv !my_array_ctx (term_to_uid a ^ "!" ^ term_to_uid t) (interval_to_string (Expr a, Expr t)) !my_array_ctx.hyps :: ensure_arrays t q)
     in
-    let ordering = interval_manager#ordering in
+    let ordering = interval_manager#ordering |> List.map List.hd in
     if very_verbose then
       interval_manager#print_ordering;
     if List.length ordering >= 2 then
