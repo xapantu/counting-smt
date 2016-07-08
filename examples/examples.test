@@ -39,5 +39,6 @@
 "examples/model_checking8_init.smt" "unsat"
 "examples/model_checking_deadlock.smt" "unsat unsat unsat"
 "examples/model_checking_deadlock_init.smt" "sat sat sat"
-"examples/model_checking9.smt" "unsat unsat"
+"examples/model_checking9.smt" "sat sat"
 "examples/model_checking9_init.smt" "unsat unsat unsat"
+"examples/array_equality.smt" "unsat unsat unsat"

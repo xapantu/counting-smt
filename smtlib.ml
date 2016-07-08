@@ -273,7 +273,6 @@ let rec extract_cards ?z:(z="") l =
           let a_extracted, defs_a = extract_cards a in
           let b_extracted, defs_b = extract_cards b in
           let ctx = ref @@ defs_a @ defs_b in
-          let result_of_equality = fresh_var ~sort:Bool () in
           let array_size = Format.sprintf "(- %s %s)" (term_to_string u) (term_to_string l) in
           let formula = Variable_manager.use_quantified_var "z" index_sort (fun constraint_on_sort ->
               let f =
@@ -287,15 +286,7 @@ let rec extract_cards ?z:(z="") l =
             )
           in
           let card_var = fresh_var () in
-          let is_equal =
-            Format.sprintf "(=> %s (= %s %s))"
-              result_of_equality
-              array_size
-              card_var
-            |> load_lisp_from_string
-          in
-          Lisp_string result_of_equality,
-          Def (is_equal) ::
+          Lisp_rec [Lisp_string "=";Lisp_string card_var; Lisp_string array_size],
           Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; }
           :: !ctx
         | e -> 
