@@ -19,7 +19,148 @@ let test_domain_neg _ =
   assert_equal  (snd @@ List.hd @@ dom_neg) (Expr (IValue 6), Expr (IValue 8));
   ()
 
-let test1 = "test_domain_neg" >:: test_domain_neg
+let test_array_solver _ =
+  let open LA_SMT in
+  let open Arrays in
+  let a_ctx = Arrays.new_ctx fresh_var_array ensure_var_exists in
+  let subdiv = Arrays.mk_full_subdiv a_ctx (Ninf, Pinf)
+               |> Arrays.equality_array a_ctx (Array_term "a") true
+  in
+  let subdiv2 = Arrays.mk_full_subdiv a_ctx (Ninf, Pinf) in
+  begin
+    match subdiv with 
+    | Some { name = "a"; left_tree = None; right_tree = None; left_selection = Unselected; right_selection = Selected; _ } -> ()
+    | _ -> assert false
+  end;
+  begin
+    match subdiv2 with 
+    | Some { name = "a"; left_tree = None; right_tree = None; left_selection = Dont_care; right_selection = Dont_care; _ } -> ()
+    | _ -> assert false
+  end;
+  let subdiv2 = Arrays.equality_array a_ctx (Array_term "b") true subdiv2 in
+  begin
+    match subdiv2 with 
+    | Some { name = "a";
+             left_tree = Some
+                 { name = "b";
+                   right_tree = None;
+                   left_tree = None;
+                   left_selection = Unselected;
+                   right_selection = Selected;
+                   _ };
+             right_tree = Some
+                 { name = "b";
+                   right_tree = None;
+                   left_tree = None;
+                   left_selection = Unselected;
+                   right_selection = Selected;
+                   _ };
+             _ } -> ()
+    | _ -> assert false
+  end;
+  let ctx = ([], new Interval_manager.interval_manager, a_ctx) in
+  let dom1 = [(subdiv, (1, [0])), (Ninf, Pinf)] in
+  let dom2 = [(subdiv2, (1, [0])), (Ninf, Pinf)] in
+  let dom  = domain_neg ctx dom1 in
+  begin
+  match dom with
+  | [(subdiv, _), (Ninf, Pinf)] ->
+    begin
+      match subdiv with 
+      | Some {
+          name = "a";
+          left_tree = None;
+          right_tree = None;
+          left_selection = Selected;
+          right_selection = Unselected; _ } -> ()
+      | _ -> assert false
+    end
+
+  | _ -> assert false
+  end;
+  let dom  = domain_neg ctx dom2 in
+  begin
+  match dom with
+  | [(subdiv, _), (Ninf, Pinf)] ->
+    begin
+      match subdiv with 
+      | Some { name = "a";
+               left_tree = Some
+                   { name = "b";
+                     right_tree = None;
+                     left_tree = None;
+                     left_selection = Selected;
+                     right_selection = Unselected;
+                     _ };
+               right_tree = Some
+                   { name = "b";
+                     right_tree = None;
+                     left_tree = None;
+                     left_selection = Selected;
+                     right_selection = Unselected;
+                     _ };
+               _ } -> ()
+      | _ -> assert false
+    end
+
+  | _ -> assert false
+  end;
+  let dom  = make_domain_intersection ctx (domain_neg ctx dom1) (domain_neg ctx dom2) in
+  begin
+  match dom with
+  | [(subdiv, _), (Ninf, Pinf)] ->
+    begin
+      match subdiv with 
+      | Some { name = "a";
+               left_tree = Some
+                   { name = "b";
+                     right_tree = None;
+                     left_tree = None;
+                     left_selection = Selected;
+                     right_selection = Unselected;
+                     _ };
+               right_tree = Some
+                   { name = "b";
+                     right_tree = None;
+                     left_tree = None;
+                     left_selection = Unselected;
+                     right_selection = Unselected;
+                     _ };
+               _ } -> ()
+      | _ -> Arrays.print_tree subdiv; assert false
+    end
+
+  | _ -> assert false
+  end;
+  let dom = make_domain_union ctx dom1 dom2 in
+  match dom with
+  | _, [(subdiv, _), (Ninf, Pinf)] ->
+    begin
+      match subdiv with 
+      | Some { name = "a";
+               left_tree = Some
+                   { name = "b";
+                     right_tree = None;
+                     left_tree = None;
+                     left_selection = Unselected;
+                     right_selection = Selected;
+                     _ };
+               right_tree = Some
+                   { name = "b";
+                     right_tree = None;
+                     left_tree = None;
+                     left_selection = Selected;
+                     right_selection = Selected;
+                     _ };
+               _ } -> ()
+      | _ -> assert false
+    end
+
+  | _ -> assert false
+
+let test1 = "suite" >::: [ "test_domain_neg" >:: test_domain_neg;
+                           "test_array_solver" >:: test_array_solver;]
+
 
 let () = run_test_tt_main test1
 

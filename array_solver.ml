@@ -69,7 +69,7 @@ module Array_solver = struct
   let new_ctx fresh_var ensure_var_exists =
     { arrays = Hashtbl.create 10; hyps = None; fresh_var; ensure_var_exists; }
   
-  (* Set all selections in the subdivision as don't care *)
+  (* Set all selections in the subdivision as don't care, and returns a copy *)
   let rec reset_subdivision = function
     | None -> None
     | Some s ->
@@ -77,35 +77,35 @@ module Array_solver = struct
                     right_selection = Dont_care;
                     left_tree = reset_subdivision s.left_tree;
                     right_tree = reset_subdivision s.right_tree; }
+  
+  let rec unselect_all = function
+    | Some s ->
+      s.left_selection <- Unselected;
+      s.right_selection <- Unselected;
+      unselect_all s.left_tree;
+      unselect_all s.right_tree;
+    | None -> ()
+
+  (* Select leaves that were in a don't care state *)
+  let rec select_dont_care = function
+    | Some s ->
+      begin
+        if s.left_selection = Dont_care then 
+          begin
+            s.left_selection <- Selected;
+            select_dont_care s.left_tree;
+          end;
+        if s.right_selection = Dont_care then 
+          begin
+            s.right_selection <- Selected;
+            select_dont_care s.right_tree;
+          end
+      end
+    | None -> ()
 
   (* Returns a tree where the array named `name` is assumed to be `value`
    * (meaning that a leaf is unselected if `name` is not `value`) *)
   let assume ctx name value tree =
-    let rec unselect_all = function
-      | Some s ->
-        s.left_selection <- Unselected;
-        s.right_selection <- Unselected;
-        unselect_all s.left_tree;
-        unselect_all s.right_tree;
-      | None -> ()
-    in
-    (* Select leaves that were in a don't care state *)
-    let rec select_dont_care = function
-      | Some s ->
-        begin
-          if s.left_selection = Dont_care then 
-           begin
-             s.left_selection <- Selected;
-             select_dont_care s.left_tree;
-           end;
-          if s.right_selection = Dont_care then 
-           begin
-             s.right_selection <- Selected;
-             select_dont_care s.right_tree;
-           end
-        end
-      | None -> ()
-    in
     (* Recursively browse the tree to apply the assumption *)
     let rec find_node_aux = function
       | Some s -> 
@@ -192,17 +192,38 @@ module Array_solver = struct
     in
     constraints_total_sum
 
+  (* Returns a copy of the subdivision *)
+  let rec array_subdivision_duplicate = function
+    | Some a ->
+      Some { a with left_tree = array_subdivision_duplicate a.left_tree;
+                    right_tree = array_subdivision_duplicate a.right_tree; }
+    | None -> None
+
   (* the first subdivision must be smaller than the second one *)
   let array_subdivision_intersection ctx a b =
     let rec intersect_aux a b =
       match a, b with
       | None, None -> None
-      | None, Some s -> Some s
+      | None, Some s -> array_subdivision_duplicate b
       | Some a, Some b ->
         assert (a.name = b.name && a.var_right = b.var_right && a.var_left = b.var_left);
         let left_selection, left_tree =
           if b.left_tree <> None then
-            Dont_care, intersect_aux a.left_tree b.left_tree
+            if a.left_tree = None then
+              match a.left_selection with
+              | Unselected ->
+                let tree = array_subdivision_duplicate  b.left_tree in
+                unselect_all tree;
+                Unselected, tree
+              | Selected ->
+                let tree = array_subdivision_duplicate  b.left_tree in
+                select_dont_care tree;
+                Selected, tree
+              | Dont_care ->
+                let tree = array_subdivision_duplicate  b.left_tree in
+                b.left_selection, tree
+            else
+              Dont_care, intersect_aux a.left_tree b.left_tree
           else if a.left_selection <> Unselected && b.left_selection = Selected then
             b.left_selection, intersect_aux a.left_tree b.left_tree
           else if b.left_selection = Unselected || a.left_selection = Unselected then
@@ -214,7 +235,21 @@ module Array_solver = struct
         in
         let right_selection, right_tree =
           if b.right_tree <> None then
-            Dont_care, intersect_aux a.right_tree b.right_tree
+            if a.right_tree = None then
+              match a.right_selection with
+              | Unselected ->
+                let tree = array_subdivision_duplicate  b.right_tree in
+                unselect_all tree;
+                Unselected, tree
+              | Selected ->
+                let tree = array_subdivision_duplicate  b.right_tree in
+                select_dont_care tree;
+                Selected, tree
+              | Dont_care ->
+                let tree = array_subdivision_duplicate  b.right_tree in
+                b.right_selection, tree
+            else
+              Dont_care, intersect_aux a.right_tree b.right_tree
           else if a.right_selection <> Unselected && b.right_selection = Selected then
             b.right_selection, intersect_aux a.right_tree b.right_tree
           else if b.right_selection = Unselected || a.right_selection = Unselected then
@@ -295,7 +330,7 @@ module Array_solver = struct
 
   (* Plain new subdivision, with no assumptions *)
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun a b ->
-    array_subdivision_duplicate a.hyps |> reset_subdivision
+    reset_subdivision a.hyps
 
   let rec is_top: array_subdivision -> bool = function
     | None -> true
