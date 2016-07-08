@@ -42,3 +42,4 @@
 "examples/model_checking9.smt" "sat sat"
 "examples/model_checking9_init.smt" "unsat unsat unsat"
 "examples/array_equality.smt" "unsat unsat unsat"
+"examples/arrays_or.smt" "unsat unsat" 
