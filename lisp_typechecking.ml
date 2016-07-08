@@ -3,6 +3,7 @@ open Arith_array_language
 module Lisp_typechecking(V:Variable_manager.VM) = struct
 
   exception Not_allowed_for_type of string * string
+  exception Incompatible_equality
 
   let rec infer =
     let open Lisp in
@@ -15,9 +16,17 @@ module Lisp_typechecking(V:Variable_manager.VM) = struct
       Bool
     | Lisp_rec (Lisp_string "#" :: q) ->
       Int (* anyway, a lot of check will be run or q later *)
-    | Lisp_rec (Lisp_string "and" :: q) | Lisp_rec (Lisp_string "true" ::q) ->
+    | Lisp_rec (Lisp_string "forall" :: q) ->
+      Bool
+    | Lisp_rec (Lisp_string "and" :: q) | Lisp_rec (Lisp_string "or" ::q) ->
       List.iter (fun l -> assert (infer l = Bool)) q;
       Bool
+    | Lisp_rec (Lisp_string "=" :: a :: b :: []) ->
+      let ta = infer a and tb = infer b in
+      if ta = tb then
+        Bool
+      else
+        raise Incompatible_equality
     | Lisp_rec(Lisp_string "+" :: q)
     | Lisp_rec (Lisp_string "-" :: q)
     | Lisp_rec (Lisp_string "*" :: q)
@@ -31,6 +40,7 @@ module Lisp_typechecking(V:Variable_manager.VM) = struct
     | Lisp_rec (Lisp_string "store" :: a :: b) ->
       infer a
     | l -> failwith ("couldn't infer type for " ^ (lisp_to_string l))
+
 
   let to_sort =
     let open Lisp in

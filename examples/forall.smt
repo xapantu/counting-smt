@@ -1,0 +1,7 @@
+(set-logic QF_LIA)
+(declare-fun N () Int)
+(declare-range A (0 N))
+(assert (>= N 0))
+(assert (=> (= (# (x A) (> x 0)) N) (forall ((x A)) (> x 0))))
+(assert (=> (forall ((x A)) (> x 0)) (= (# (x A) (> x 0)) N)))
+(check-sat)

@@ -13,7 +13,7 @@ module Variable_manager (Formula:sig
     | Not of expr
   end) = struct
 
-  exception Unknown_sort of string
+  exception Unknown_sort_for_var of string
   exception TypeCheckingError of string * string * string
 
   open Formula
@@ -61,7 +61,7 @@ module Variable_manager (Formula:sig
     try
     fst @@ List.find (fun (s, n) -> name = n) !vars
     with
-    | Not_found -> raise (Unknown_sort(name))
+    | Not_found -> raise (Unknown_sort_for_var(name))
 
   let ensure_int name =
     match get_sort name with

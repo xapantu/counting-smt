@@ -24,7 +24,12 @@ exception Out
 exception Not_allowed of string
 exception Not_allowed_for_type of string * string
 exception Type_not_allowed_for_counting of string
+exception Forall_on_range
 
+let range_to_string = function
+  | Range(l) -> interval_to_string l
+  | _ -> raise Forall_on_range
+           
 let ensure_int_expr l =
   match Typing.infer l with
   | Int | Range(_) -> ()
@@ -258,6 +263,8 @@ let rec extract_cards ?z:(z="") l =
       Def (Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]) ::
       Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } ::
       !ctx
+    | Lisp_rec (Lisp_string "forall" :: ((Lisp_rec (Lisp_rec (Lisp_string a :: Lisp_string b :: []) :: []) :: _) as q) ) ->
+      extract_cards (Lisp_rec (Lisp_string "=" :: Lisp_string (range_to_string (Variable_manager.get_range b)) :: Lisp_rec (Lisp_string "#" :: q) :: []))
     | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
       let sort_a, sort_b = Typing.infer a, Typing.infer b in
       begin

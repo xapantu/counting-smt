@@ -47,7 +47,6 @@ let apply_not: bool term -> bool term = function
   | BVar(s, b) -> BVar(s, not b)
   | Array_access(a, i, v) -> Array_access(a, i, not v)
 
-
 let rec term_to_string : type a. a term -> string = function
   | IVar (s, 0) -> s
   | IVar (s, i) when i > 0 -> Format.sprintf "(+ %s %d)" s i

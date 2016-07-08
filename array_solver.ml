@@ -113,8 +113,7 @@ module Array_solver = struct
           if s.name = name then
             if value then
               begin
-                if s.left_selection = Dont_care then
-                  s.left_selection <- Unselected;
+                s.left_selection <- Unselected;
                 if s.right_selection = Dont_care then
                   s.right_selection <- Selected;
 
@@ -123,8 +122,7 @@ module Array_solver = struct
               end
             else
               begin
-                if s.right_selection = Dont_care then
-                  s.right_selection <- Unselected;
+                s.right_selection <- Unselected;
                 if s.left_selection = Dont_care then
                   s.left_selection <- Selected;
 
