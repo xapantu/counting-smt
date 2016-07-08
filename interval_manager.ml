@@ -57,19 +57,24 @@ class interval_manager = object(this)
       in
       ordering <- insert_into ordering
 
-  method assume_oracle oracle a =
-    (match a with
-    | Greater (a, b) -> this#order oracle a; this#order oracle b;
-    | IEquality(a, b) -> this#order oracle a; this#order oracle b;
-    | _ -> (););
-    this#assume a
+  method add_to_ordering (is_top:constraints -> bool) oracle domain =
+    let save_order = function
+      | Expr a -> this#order oracle a
+      | _ -> ()
+    in
+    List.iter (fun (a, (l, u)) ->
+        if not (is_top a) then
+          (save_order l; save_order u;)) domain
 
-  method fix_ordering =
+  method fix_ordering oracle =
+    List.iter (function
+        | Greater(a, b) | IEquality(a, b) -> this#order oracle a; this#order oracle b
+        | _ -> ()) assumptions;
     List.iter (function
         | Greater(a, b) ->
           let index_of l a =
             let rec index_of_aux i = function
-              | [] -> this#print_ordering; raise Not_found
+              | [] -> raise Not_found
               | t::q -> if a = t then i else index_of_aux (i+1) q
             in
             index_of_aux 0 l
@@ -78,15 +83,24 @@ class interval_manager = object(this)
           let bi = index_of ordering b in
           if ai < bi then
             ordering <- List.map (fun r -> if r = a then b else if r = b then a else r) ordering;
-        | _ -> ()) assumptions
-
-
+        | _ -> ()) assumptions;
+    (* Now check that the assumptions actually enforce the ordering *)
+    let rec check_enough_assumptions = function
+      | [] | _::[] -> ()
+      | t::q ->
+        check_enough_assumptions q;
+        let assumed =
+          List.fold_left (fun found elt ->
+            found || List.mem (Greater(elt, t)) this#assumptions) false q in
+        if not assumed then
+          this#assume (Greater(List.hd q, t))
+    in
+    check_enough_assumptions ordering
+          
   method ordering =
-    this#fix_ordering;
     ordering
 
   method get_slices_of_ordering (a, b) =
-    this#fix_ordering;
     let rec find_aux a ind b = match b with
       | [] -> failwith (term_to_string a)
       | t::q ->
@@ -117,6 +131,13 @@ class interval_manager = object(this)
         res := (term_to_uid (List.nth ordering (i-1)) ^ "!" ^ term_to_uid (List.nth ordering i)) :: !res
     done;
     !res
+  
+  method assume_oracle oracle a =
+    (match a with
+    | Greater (a, b) -> this#order oracle a; this#order oracle b;
+    | IEquality(a, b) -> this#order oracle a; this#order oracle b;
+    | _ -> (););
+    this#assume a
 
   method complementary_domain dom (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
     let rec domain_neg_aux old_bound dom =
@@ -173,61 +194,51 @@ class interval_manager = object(this)
       ((arr, (l1, u1)): constrained_interval)
       (d2:constrained_domain)
     =
-    let save_order = function
-      | Expr a -> this#order oracle a
-      | _ -> ()
-    in
-    let oracle a b =
-      let comp = oracle a b in
-      if comp > 0 then
-        (this#order oracle (plus_one b); this#assume (Greater(a, plus_one b)))
-      else if comp < 0 then
-        (this#order oracle (plus_one a); this#assume (Greater(b, plus_one a)))
-      else
-        this#assume (IEquality(a, b));
-      comp
-    in
-    (* >= *)
     let greater a b =
-      save_order a; save_order b;
       match a, b with
-        | _, Ninf -> true
-        | Ninf, _ -> false
-        | Pinf, _  -> true
-        | _, Pinf  -> false
+        | _, Ninf -> 1
+        | Ninf, _ -> -1
+        | Pinf, _  -> 1
+        | _, Pinf  -> -1
         | Expr a, Expr b ->
-          oracle a b >= 0
+          let c = oracle a b in
+          c
     in
-    let equal a b =
-      save_order a; save_order b;
+    let assume_greater a b =
       match a, b with
-        | Ninf, Ninf -> true
-        | Pinf, Pinf -> true
+        | _, Ninf | Ninf, _ | Pinf, _  | _, Pinf  -> ()
         | Expr a, Expr b ->
-          oracle a b = 0
-        | _ -> false
+          this#assume (Greater (a, b))
     in
     let rec extract_inter = function
       | [] -> []
       | (arrays, (l, u))::q ->
         let intersect_arrays = intersect_constraints arr arrays in
-        if greater l u1 then
-          if equal l u1 then
-            [intersect_arrays, (l, u1)]
-          else
-            []
-        else if greater l l1 then
-          if greater u u1 then
-            (intersect_arrays, (l, u1))::extract_inter q
-          else
-            (intersect_arrays, (l, u))::extract_inter q
-        else if greater u l1 then
-          if greater u u1 then
-            (intersect_arrays, (l1, u1))::extract_inter q
-          else
-            (intersect_arrays, (l1, u))::extract_inter q
-        else
-          extract_inter q
+        (* the first two case mean that there is no intersection *)
+        if greater l u1 > 0 then
+          (assume_greater l u1;
+             [])
+        else if greater  l1 u > 0 then
+          (assume_greater l1 u;
+           extract_inter q)
+        else (* so, there is an intersection here *)
+          begin
+            assume_greater u1 l; assume_greater u l1;
+            let bound_inf =
+              if greater l l1 >= 0 then 
+                (assume_greater l l1; l)
+              else
+                (assume_greater l1 l; l1)
+            in
+            let bound_sup =
+              if greater u u1 >= 0 then
+                (assume_greater u u1; u1)
+              else
+                (assume_greater u1 u; u)
+            in
+            assume_greater bound_sup bound_inf;
+            (intersect_arrays, (bound_inf, bound_sup)) :: extract_inter q
+          end
     in
     extract_inter d2
                   

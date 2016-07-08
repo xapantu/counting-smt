@@ -8,7 +8,7 @@ module Mixed_solver (T: Theory_model.T) =
       let constraints_cards =
         map (fun c ->
                 c, T.expr_to_domain im m c.quantified_var c.expr) cards in
-      T.implies_constraints im;
+      T.implies_constraints m im (List.map snd constraints_cards);
       iter (fun (c, d) ->
                 T.implies_card im c.var_name d;
         ) constraints_cards;

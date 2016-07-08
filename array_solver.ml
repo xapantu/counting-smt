@@ -317,17 +317,17 @@ module Array_solver = struct
     in
     let prefix = List.map ( (^) "a!") prefix in
     let rec aux = function
-      | None -> ["0"]
+      | None -> []
       | Some s ->
         let left =
           if all_true s.left_tree || (s.left_tree = None && (s.left_selection = Selected || s.left_selection = Dont_care)) then
             List.map (fun p -> p ^ s.var_left) prefix
-          else ["0"]
+          else []
         in
         let right =
           if all_true s.right_tree || (s.right_tree = None && (s.right_selection = Selected || s.right_selection = Dont_care)) then
             List.map (fun p -> p ^ s.var_right) prefix
-          else ["0"]
+          else []
         in
         left @ right @ (if all_true s.left_tree then [] else aux s.left_tree) @ (if all_true s.right_tree then [] else aux s.right_tree)
     in

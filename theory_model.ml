@@ -16,7 +16,7 @@ module type T = sig
   val solve_formula: expr -> (model -> 'a) -> 'a
   val expr_to_domain: interval_manager -> model -> string -> expr -> domain
   val implies_card: interval_manager -> string -> domain -> unit
-  val implies_constraints: interval_manager -> unit
+  val implies_constraints: model -> interval_manager -> domain list -> unit
   val solve_assuming: interval_manager -> (model -> 'a) -> 'a
   val domain_to_str: domain -> string
 
@@ -159,7 +159,8 @@ module LA_SMT = struct
 
   (* true if this variable is seen by the underlying solver (such as yices). For instance,
    * at this moment, arrays are not seen. *)
-  let var_is_raw (sort, name) = match sort with
+  let var_is_raw (sort, name) =
+    match sort with
     | Int | Bool | Range(_) | Real -> true
     | _ -> false
 
@@ -245,8 +246,41 @@ module LA_SMT = struct
   let rec seq (a, b) =
     if a = b then [a]
     else a :: seq (a+1, b)
+  
+  let get_val_from_model: type a. model -> a term -> a = fun model -> function
+    | IVar(a, i) ->
+      begin
+        try
+        let k = snd @@ List.find (fun (v,b) -> v = a) model in
+        match k with
+        | VInt(k) -> k+i
+        | _ -> raise (TypeCheckingError (a, "int"))
+        with
+        | Not_found -> failwith ("couldn't get variable " ^ a ^ "from model")
+      end
+    | IValue(i) -> i
+    | BValue(b) -> b
+    | BVar(a, modi) ->
+      begin
+        let k = snd @@ List.find (fun (v,b) -> v = a) model in
+        match k with
+        | VBool(k) -> (modi && k) || (not modi && not k)
+        | _ -> raise (TypeCheckingError (a, "bool"))
+      end
+    | Array_access(Array_term(a), _, _) ->
+      failwith (Format.sprintf "trying to get an array value from a model - should not happen: %s@." a)
+    | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
 
-  let implies_constraints interval_manager  =
+
+  let implies_constraints model (interval_manager:interval_manager) (all_domains:domain list) =
+    let oracle a b =
+      compare (get_val_from_model model a) (get_val_from_model model b)
+    in
+    let is_top = fun (a, (m, r)) ->
+        Arrays.is_top a && (m = List.length r)
+    in
+    interval_manager#add_to_ordering is_top oracle (List.concat all_domains);
+    interval_manager#fix_ordering oracle;
     let rec ensure_arrays a = function
       | [] -> []
       | t::q ->
@@ -306,30 +340,6 @@ module LA_SMT = struct
     solve_in_context (fun () ->
         assumptions_to_expr im#assumptions |> expr_to_smt |> assert_formula)
       cont
-
-  let get_val_from_model: type a. model -> a term -> a = fun model -> function
-    | IVar(a, i) ->
-      begin
-        try
-        let k = snd @@ List.find (fun (v,b) -> v = a) model in
-        match k with
-        | VInt(k) -> k+i
-        | _ -> raise (TypeCheckingError (a, "int"))
-        with
-        | Not_found -> failwith ("couldn't get variable " ^ a ^ "from model")
-      end
-    | IValue(i) -> i
-    | BValue(b) -> b
-    | BVar(a, modi) ->
-      begin
-        let k = snd @@ List.find (fun (v,b) -> v = a) model in
-        match k with
-        | VBool(k) -> (modi && k) || (not modi && not k)
-        | _ -> raise (TypeCheckingError (a, "bool"))
-      end
-    | Array_access(Array_term(a), _, _) ->
-      failwith (Format.sprintf "trying to get an array value from a model - should not happen: %s@." a)
-    | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
 
   let make_domain_intersection ctx (d1:arrayed_domain) (d2:arrayed_domain) =
     let oracle a b =
