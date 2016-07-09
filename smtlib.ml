@@ -10,7 +10,7 @@ module Variable_manager = LA_SMT.Variable_manager
 module Typing = Lisp_typechecking.Lisp_typechecking(Variable_manager)
 
 type additional_defs = 
-  | Card of LA_SMT.Formula.card
+  | Card of Solver.constructed_variables
   | Def of Lisp.lisp
 
 let fresh_var =
@@ -202,7 +202,7 @@ let rec extract_cards ?z:(z="") l =
           let formula_extracted, defs_formula = extract_cards ~z:z formula in
           ctx := defs_formula;
           And(a, lisp_to_expr ~z ctx formula_extracted)) in
-      Lisp_string (y), Card {var_name = y; expr = formula; quantified_var = z; quantified_sort = sort; } :: !ctx
+      Lisp_string (y), Card {var_name = y; construct = { expr = formula; quantified_var = z; quantified_sort = sort;} } :: !ctx
     | Lisp_rec (Lisp_string "select" :: a :: b :: [] ) when b <> Lisp_string z ->
       let a_extracted, defs_a = extract_cards a in
       let b_extracted, defs_b = extract_cards b in
@@ -228,7 +228,7 @@ let rec extract_cards ?z:(z="") l =
       in
       Lisp_string y,
       Def (Lisp_rec [Lisp_string "="; Lisp_string card_var; Lisp_string "1"]) ::
-      Card { var_name = card_var; expr = formula; quantified_var = "z"; quantified_sort = Int; } ::
+      Card { var_name = card_var; construct = { expr = formula; quantified_var = "z"; quantified_sort = Int; } } ::
       !ctx
     | Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) when b <> Lisp_string z ->
       let a_extracted, defs_a = extract_cards a in
@@ -261,7 +261,7 @@ let rec extract_cards ?z:(z="") l =
       in
       Lisp_string result_of_store,
       Def (Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]) ::
-      Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; } ::
+      Card { var_name = card_var;  construct = { expr=formula; quantified_var = "z"; quantified_sort = index_sort; } } ::
       !ctx
     | Lisp_rec (Lisp_string "forall" :: ((Lisp_rec (Lisp_rec (Lisp_string a :: Lisp_string b :: []) :: []) :: _) as q) ) ->
       extract_cards (Lisp_rec (Lisp_string "=" :: Lisp_string (range_to_string (Variable_manager.get_range b)) :: Lisp_rec (Lisp_string "#" :: q) :: []))
@@ -287,7 +287,7 @@ let rec extract_cards ?z:(z="") l =
           in
           let card_var = fresh_var () in
           Lisp_rec [Lisp_string "=";Lisp_string card_var; Lisp_string array_size],
-          Card { var_name = card_var; expr=formula; quantified_var = "z"; quantified_sort = index_sort; }
+          Card { var_name = card_var; construct = { expr=formula; quantified_var = "z"; quantified_sort = index_sort; } }
           :: !ctx
         | e -> 
           let a_extracted, defs_a = extract_cards ~z a in
@@ -315,7 +315,7 @@ let rec runner stdout lexing_stdin cards' =
             | Lisp_rec (Lisp_string "get-model" :: []) ->
               begin
                 try
-                  Solver.solve_context !cards  |> LA_SMT.print_model stdout
+                  Solver.solve_context_get_model !cards |> LA_SMT.print_model
                 with
                   | LA_SMT.Unsat -> Printf.fprintf stdout "unsat\n"
               end

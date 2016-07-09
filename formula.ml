@@ -12,8 +12,6 @@ module type F = sig
 
   type assumptions = texpr list
 
-  type card = { var_name: string; expr: expr; quantified_var: string; quantified_sort: sort; }
-
 end
 
 module IFormula (T : sig
