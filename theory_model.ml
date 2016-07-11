@@ -91,8 +91,9 @@ module LA_SMT = struct
 
 
   let define_new_variable =
-    React.iter Variable_manager.new_variables (fun (name, mytype) ->
-        match mytype with
+    Variable_manager.(React.iter new_variables (fun var ->
+        let name = var.name in
+        match var.sort with
         | Int ->
           send_to_solver @@ "(declare-fun " ^ name ^ " () Int)"
         | Bool ->
@@ -103,7 +104,7 @@ module LA_SMT = struct
           send_to_solver @@ "(declare-fun " ^ name ^ " () Int)";
           send_to_solver @@ Format.sprintf "(assert (and (<= %s %s) (< %s %s)))" (term_to_string a) name name (term_to_string b)
         | Array(Range(_, _), Bool) -> ()
-        | e -> failwith "Too complex array type")
+        | e -> failwith "Too complex array type"))
 
 
   let fresh_var_array =
@@ -115,7 +116,7 @@ module LA_SMT = struct
 
   let ensure_var_exists ?constraints:(constr=None) a =
     try
-      ignore (List.find (fun (s, n) -> n = a) !Variable_manager.vars); ()
+      ignore Variable_manager.(List.find (fun v -> v.name = a) !vars); ()
     with
     | Not_found -> 
       Variable_manager.use_var Int a;
@@ -141,13 +142,14 @@ module LA_SMT = struct
 
   (* true if this variable is seen by the underlying solver (such as yices). For instance,
    * at this moment, arrays are not seen. *)
-  let var_is_raw (sort, name) =
-    match sort with
+  let var_is_raw v =
+    match Variable_manager.(v.sort) with
     | Int | Bool | Range(_) | Real -> true
     | _ -> false
 
   let get_model () =
-    send_to_solver @@ Format.sprintf "(get-value (%s))" (List.filter var_is_raw !(Variable_manager.vars) |> List.map snd |> String.concat " ");
+    let open Variable_manager in
+    send_to_solver @@ Format.sprintf "(get-value (%s))" (List.filter var_is_raw !vars |> List.map (fun v -> v.name) |> String.concat " ");
     let open Lisp in
     let get_var lisp =
       match lisp with
@@ -175,11 +177,19 @@ module LA_SMT = struct
       end
     | _ -> raise (Unknown_answer ("couldn't understand root "))
 
+  (* ok, so, ATM creating a new array context every time is way more costly, maybe it is a good heuristic to process
+   * the first cardinalities first, I have no idea *)
+  let a = ref (Arrays.new_ctx fresh_var_array ensure_var_exists)
+  let new_array_ctx () = !a 
+
   let push f =
     send_to_solver "(push 1)";
     let old_v = !(Variable_manager.vars) in
+    let open Arrays in
+    let sub = array_subdivision_duplicate !a.hyps in
     f ();
     Variable_manager.vars := old_v;
+    !a.hyps <- sub;
     send_to_solver "(pop 1)"
 
   let print_model m =
@@ -432,8 +442,6 @@ module LA_SMT = struct
 
   let new_interval_manager () = new Interval_manager.interval_manager
   
-  let new_array_ctx () = Arrays.new_ctx fresh_var_array ensure_var_exists
-
   let new_context () = { model = []; interval_manager = new_interval_manager (); array_ctx =  new_array_ctx (); }
 
   let build_full_model (m:abstract_model) = m.model

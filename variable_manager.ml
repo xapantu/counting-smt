@@ -17,15 +17,17 @@ module Variable_manager (Formula:sig
   exception TypeCheckingError of string * string * string
 
   open Formula
+  type var = { name: string; sort: sort; internal: bool; }
   let vars = ref []
   let range = Hashtbl.create 10
   let get_range = Hashtbl.find range
 
   let new_variables = React.new_event ()
 
-  let use_var name my_type =
-    vars := (name, my_type) :: !vars;
-    React.event new_variables (my_type, name)
+  let use_var ?internal:(internal=false) sort name =
+    let v = { name; sort; internal; } in
+    vars := v :: !vars;
+    React.event new_variables v
   
   let new_range: string -> bound -> bound -> unit =
     fun name b1 b2 ->
@@ -42,12 +44,12 @@ module Variable_manager (Formula:sig
     | _ -> assert false
 
   let use_quantified_var name sort f =
-    vars := (sort, name) :: !vars;
+    let v = { sort; name; internal = true; } in
+    vars := v :: !vars;
     let a = f (constraints_on_sort sort name) in
     let first = ref true in
     vars := List.filter (fun x -> 
-        let (a, b) = x in
-        if b = name then
+        if x = v then
           if !first then
             (first := false; false)
           else
@@ -59,7 +61,7 @@ module Variable_manager (Formula:sig
 
   let get_sort name =
     try
-    fst @@ List.find (fun (s, n) -> name = n) !vars
+    (List.find (fun v -> name = v.name) !vars).sort
     with
     | Not_found -> raise (Unknown_sort_for_var(name))
 
