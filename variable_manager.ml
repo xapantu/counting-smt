@@ -3,6 +3,7 @@ open Arith_array_language
 module type VM = sig
   val get_sort: string -> sort
   val get_range: string -> sort
+  val find_all: (var -> bool) -> var list
 end
 
 module Variable_manager (Formula:sig
@@ -17,16 +18,18 @@ module Variable_manager (Formula:sig
   exception TypeCheckingError of string * string * string
 
   open Formula
-  type var = { name: string; sort: sort; internal: bool; }
-  let vars = ref []
+  let vars = ref (Hashtbl.create 1000)
   let range = Hashtbl.create 10
   let get_range = Hashtbl.find range
 
   let new_variables = React.new_event ()
 
+  let find a =
+    Hashtbl.find !vars a
+
   let use_var ?internal:(internal=false) sort name =
     let v = { name; sort; internal; } in
-    vars := v :: !vars;
+    Hashtbl.add !vars v.name v;
     React.event new_variables v
   
   let new_range: string -> bound -> bound -> unit =
@@ -34,7 +37,7 @@ module Variable_manager (Formula:sig
       Hashtbl.add range name (Range (b1, b2))
 
   let reset () =
-    vars := []; Hashtbl.reset range 
+    Hashtbl.reset !vars; Hashtbl.reset range 
   
   let constraints_on_sort sort name = match sort with
     | Int | Bool -> Theory_expr(Bool (BValue true))
@@ -45,23 +48,22 @@ module Variable_manager (Formula:sig
 
   let use_quantified_var name sort f =
     let v = { sort; name; internal = true; } in
-    vars := v :: !vars;
+    Hashtbl.add !vars v.name v;
     let a = f (constraints_on_sort sort name) in
-    let first = ref true in
-    vars := List.filter (fun x -> 
-        if x = v then
-          if !first then
-            (first := false; false)
-          else
-            true
-        else
-          true) !vars;
-    assert (not !first);
+    Hashtbl.remove !vars v.name; 
     a
+
+  let find_all f =
+    let s = ref [] in
+    Hashtbl.iter (fun a b ->
+        if f b then
+          s := b :: !s;
+      ) !vars;
+    !s
 
   let get_sort name =
     try
-    (List.find (fun v -> name = v.name) !vars).sort
+      (Hashtbl.find !vars name).sort
     with
     | Not_found -> raise (Unknown_sort_for_var(name))
 

@@ -15,11 +15,22 @@ module LA_SMT = struct
   exception TypeCheckingError of string * string
   exception Bad_interval
 
-  module Arrays = Array_solver.Array_solver
   open Arith_array_language
-
+  
+  module Formula = IFormula(struct
+      type texpr = rel
+      let texpr_to_smt = rel_to_smt
+      type tsort = sort
+    end)
 
   type congruence = int * int list (* modulo * remainder *)
+  module Variable_manager = Variable_manager.Variable_manager(Formula)
+  module Arrays = Array_solver.Array_solver(Variable_manager)
+  module Interval_manager = Interval_manager.Interval_manager(struct
+      type constraints = Arrays.array_subdivision * congruence
+    end) 
+
+
   type arrayed_interval = (Arrays.array_subdivision * congruence) * interval
   type arrayed_domain = arrayed_interval list
   type interval_manager = Interval_manager.interval_manager
@@ -43,13 +54,6 @@ module LA_SMT = struct
   let sort_for_construct _ =
     Int
 
-  module Formula = IFormula(struct
-      type texpr = rel
-      let texpr_to_smt = rel_to_smt
-      type tsort = sort
-    end)
-
-  module Variable_manager = Variable_manager.Variable_manager(Formula)
 
   open Formula
 
@@ -116,7 +120,7 @@ module LA_SMT = struct
 
   let ensure_var_exists ?constraints:(constr=None) a =
     try
-      ignore Variable_manager.(List.find (fun v -> v.name = a) !vars); ()
+      ignore (Variable_manager.find a); ()
     with
     | Not_found -> 
       Variable_manager.use_var Int a;
@@ -148,19 +152,32 @@ module LA_SMT = struct
     | _ -> false
 
   let get_model () =
-    let open Variable_manager in
-    send_to_solver @@ Format.sprintf "(get-value (%s))" (List.filter var_is_raw !vars |> List.map (fun v -> v.name) |> String.concat " ");
+    let fetched_variables = ref (Variable_manager.find_all var_is_raw) in
+    let pop_variable a =
+      let rec aux = function
+        | [] -> raise Not_found
+        | t::q -> if t.name = a then
+            q, t
+          else
+            let q', a = aux q in
+            t::q', a
+      in
+      let f, t = aux !fetched_variables in
+      fetched_variables := f;
+      t
+    in
+    send_to_solver @@ Format.sprintf "(get-value (%s))" (List.map (fun v -> v.name) !fetched_variables |> String.concat " ");
     let open Lisp in
     let get_var lisp =
       match lisp with
       | Lisp_rec(Lisp_string b :: Lisp_int v :: []) ->
-        (b, VInt v)
+        (pop_variable b, VInt v)
       | Lisp_rec(Lisp_string b :: Lisp_rec(Lisp_string "-" :: Lisp_int v :: []) :: []) ->
-        (b, VInt(-v))
+        (pop_variable b, VInt(-v))
       | Lisp_rec(Lisp_string b :: Lisp_true :: []) ->
-        (b, VBool true)
+        (pop_variable b, VBool true)
       | Lisp_rec(Lisp_string b :: Lisp_false :: []) ->
-        (b, VBool false)
+        (pop_variable b, VBool false)
       | a -> raise (Unknown_answer ("couldn't understand that \"" ^ lisp_to_string a ^ "\""))
     in
     let lisp = !solver_in
@@ -170,7 +187,9 @@ module LA_SMT = struct
     | Lisp_rec(l) ->
       begin
         try
-          List.map get_var l
+          let model = List.map get_var l in
+          assert (List.length (!fetched_variables) = 0);
+          model
         with
         | Unknown_answer (a) ->
           raise (Unknown_answer ("couldn't understand \n\t" ^ lisp_to_string lisp ^ "\n and more specifically:\n" ^ a))
@@ -184,7 +203,7 @@ module LA_SMT = struct
 
   let push f =
     send_to_solver "(push 1)";
-    let old_v = !(Variable_manager.vars) in
+    let old_v = Hashtbl.copy !Variable_manager.vars in
     let open Arrays in
     let sub = array_subdivision_duplicate !a.hyps in
     f ();
@@ -193,12 +212,12 @@ module LA_SMT = struct
     send_to_solver "(pop 1)"
 
   let print_model m =
-    List.iter (fun (b, v) ->
+    List.sort (fun i j -> compare (fst i).name (fst j).name) m
+    |> List.iter (fun (b, v) ->
         match v with
-        | VBool(t) ->  Printf.fprintf stdout "%s = %b\n" b t
+        | VBool(t) ->  Printf.fprintf stdout "%s = %b\n" b.name t
         | VInt(v) ->
-          if(String.length b <= 5 || String.sub b 0 5 <> "card!") then Printf.fprintf stdout "%s = %d\n" b v)
-      m
+          if(String.length b.name <= 5 || String.sub b.name 0 5 <> "card!") then Printf.fprintf stdout "%s = %d\n" b.name v)
 
   let rec seq (a, b) =
     if a = b then [a]
@@ -209,7 +228,7 @@ module LA_SMT = struct
     | IVar(a, i) ->
       begin
         try
-        let k = snd @@ List.find (fun (v,b) -> v = a) model in
+        let k = snd @@ List.find (fun (v, b) -> v.name = a) model in
         match k with
         | VInt(k) -> k+i
         | _ -> raise (TypeCheckingError (a, "int"))
@@ -220,7 +239,7 @@ module LA_SMT = struct
     | BValue(b) -> b
     | BVar(a, modi) ->
       begin
-        let k = snd @@ List.find (fun (v,b) -> v = a) model in
+        let k = snd @@ List.find (fun (v,b) -> v.name = a) model in
         match k with
         | VBool(k) -> (modi && k) || (not modi && not k)
         | _ -> raise (TypeCheckingError (a, "bool"))

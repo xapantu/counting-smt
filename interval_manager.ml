@@ -5,8 +5,11 @@ include Arith_array_language
 
 exception Bad_interval
 
+module Interval_manager(Constraints: sig
+    type constraints
+  end) = struct
 type congruence = int * (int list)
-type constraints = Array_solver.array_subdivision * congruence
+type constraints = Constraints.constraints
 type constrained_interval = constraints * interval
 type constrained_domain = constrained_interval list
 
@@ -296,4 +299,5 @@ class interval_manager = object(this)
     let do_inter = this#intersection_interval_domain oracle intersect_constraints in
     List.fold_right (fun constrained_interval l -> do_inter constrained_interval d2 @ l) d1 []
 
+end
 end

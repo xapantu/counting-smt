@@ -39,7 +39,9 @@ type sort =
   | Array of sort * sort
   | Range of interval
 
-type assignation = string * concrete_value
+type var = { name: string; sort: sort; internal: bool; }
+
+type assignation = var * concrete_value
 type model = assignation list
 
 let apply_not: bool term -> bool term = function

@@ -2,16 +2,11 @@ open Utils
 
 (* Ideally, that module should be parametrized by the data type (Bool, Int, Range, Reals) 
  * only bools for now *)
-module Array_solver = struct
+module Array_solver(V:Variable_manager.VM) = struct
 
   exception Not_implemented
 
   open Arith_array_language
-
-  type my_array = {
-    name: string;
-    indexes: interval;
-  }
 
   type selection =
     | Selected
@@ -31,7 +26,7 @@ module Array_solver = struct
 
   type array_subdivision = hyp_tree option
 
-  type array_ctx = { arrays: (string, my_array) Hashtbl.t;
+  type array_ctx = {
                      mutable hyps: hyp_tree option;
                      fresh_var: unit -> string;
                      ensure_var_exists: ?constraints:rel option -> string -> unit;
@@ -63,11 +58,8 @@ module Array_solver = struct
     in
     { ctx with hyps = cp ctx.hyps }
 
-  let new_array ctx name indexes =
-    Hashtbl.add ctx.arrays name { name; indexes; }
-
   let new_ctx fresh_var ensure_var_exists =
-    { arrays = Hashtbl.create 10; hyps = None; fresh_var; ensure_var_exists; }
+    { hyps = None; fresh_var; ensure_var_exists; }
   
   (* Set all selections in the subdivision as don't care, and returns a copy *)
   let rec reset_subdivision = function
@@ -365,7 +357,18 @@ module Array_solver = struct
         left @ right @ (if all_true s.left_tree then [] else aux s.left_tree) @ (if all_true s.right_tree then [] else aux s.right_tree)
     in
     aux sub
-    
 
+  let model_create_empty_arrays ctx (concrete_value: int term -> int) =
+    V.find_all (fun v -> v.internal && match v.sort with
+      | Array(Range(Expr a, Expr b), Bool) -> true
+      | _ -> false)
+    |> List.map (fun v -> match v.sort with
+        | Array(Range(Expr a, Expr b), Bool) ->
+          Array.make ((concrete_value b) - (concrete_value a)) None, concrete_value a
+        | _ -> assert false
+      )
+  
+  let model_set_arrays_from_slice ctx arrays_model (lower:int) (upper:int) prefix subdivision =
+    ()
 
 end
