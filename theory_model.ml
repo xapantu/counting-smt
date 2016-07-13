@@ -25,7 +25,7 @@ module LA_SMT = struct
 
   type congruence = int * int list (* modulo * remainder *)
   module Variable_manager = Variable_manager.Variable_manager(Formula)
-  module Arrays = Array_solver.Array_solver(Variable_manager)
+  module Arrays = Counting_solver.Counting_solver(Variable_manager)
   module Interval_manager = Interval_manager.Interval_manager(struct
       type constraints = Arrays.array_subdivision * congruence
     end) 

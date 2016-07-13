@@ -7,7 +7,8 @@ type _ term =
   | BValue : bool -> bool term
   | BVar : string * bool -> bool term
   | Array_term : string -> bool array term
-  | Array_access : bool array term * int term * bool (* last one is the negation *) -> bool term
+  | Array_store : 'a array term * int term * 'a term -> 'a array term
+  | Array_access : 'a array term * int term * bool (* last one is the negation *) -> 'a term
 
 type arithmetic_expression =
   | APlus of arithmetic_expression * arithmetic_expression
@@ -18,12 +19,18 @@ type concrete_value =
   | VBool of bool
   | VInt of int
 
+type _ equality =
+  | AEquality : 'a array term * 'a array term -> 'a array equality
+  | ExtEquality : 'a array term * 'a array term -> 'a array equality
+
+
 type rel =
   | Mod of int term * int * int
   | Greater of int term * int term
   | IEquality of int term * int term
   | BEquality of bool term * bool term
   | Bool of bool term
+  | Array_bool_equality of bool array equality
 
 type bound =
   | Ninf

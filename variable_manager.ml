@@ -4,6 +4,7 @@ module type VM = sig
   val get_sort: string -> sort
   val get_range: string -> sort
   val find_all: (var -> bool) -> var list
+  val new_variables: var React.event
 end
 
 module Variable_manager (Formula:sig
