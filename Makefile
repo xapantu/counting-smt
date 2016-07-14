@@ -6,15 +6,15 @@ byte:
 debug:
 	ocamlbuild solver.d.byte -use-ocamlfind
 
-tests.native: all
-	ocamlbuild tests.native -use-ocamlfind
+tests.d.byte: all
+	ocamlbuild tests.d.byte -use-ocamlfind
 
-check: all tests.native exttests.native
-	./tests.native 
-	./exttests.native examples/examples.test
+check: all tests.d.byte exttests.d.byte
+	./tests.d.byte 
+	./exttests.d.byte examples/examples.test
 
-exttests.native: all
-	ocamlbuild exttests.native -use-ocamlfind
+exttests.d.byte: all
+	ocamlbuild exttests.d.byte -use-ocamlfind
 
 clean:
 	rm -rf _build *.native documentation.docdir \

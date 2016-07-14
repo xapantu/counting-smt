@@ -24,17 +24,21 @@ let test_array_solver _ =
   let module Solver = Array_solver.Array_solver (struct
       module V = LA_SMT.Variable_manager
       type a = bool
+      let equality_to_rel = function
+        | AEquality(a, b) -> Array_bool_equality(AEquality(a, b))
+        | ExtEquality(a, b) -> Array_bool_equality(ExtEquality(a, b))
     end) in
   LA_SMT.Variable_manager.use_var (Array(Range(Ninf, Pinf), Bool)) "a";
   LA_SMT.Variable_manager.use_var (Array(Range(Ninf, Pinf), Bool)) "b";
   LA_SMT.Variable_manager.use_var (Array(Range(Ninf, Pinf), Bool)) "c";
-  let a = Array_term "a" in
-  let b = Array_term "b" in
+  let a = Array_term("a", TBool) in
+  let b = Array_term("b", TBool) in
   let ctx, dis = Solver.context_from_equality [AEquality(a, b)] (function
       | Array_bool_equality(AEquality(e, f)) when e = a && f = b -> true
       | _ -> assert false) in
   assert_equal (List.length dis) 0;
-  assert_equal (Solver.get_array_at ctx a (IValue 0)) (Array_access (b, IValue 0, false));
+  assert_equal (Solver.get_array_at ctx a (IValue 0) = Array_access (b, IValue 0, false) ||
+   Solver.get_array_at ctx b (IValue 0) = Array_access (a, IValue 0, false)) true;
   let ctx, dis = Solver.context_from_equality [AEquality(a, b)] (function
       | Array_bool_equality(AEquality(e, f)) when e = a && f = b -> false
       | _ -> assert false) in
@@ -43,7 +47,7 @@ let test_array_solver _ =
   let ctx, dis = Solver.context_from_equality [ExtEquality(a, b)] (function
       | Array_bool_equality(ExtEquality(e, f)) when e = a && f = b -> false
       | _ -> assert false) in
-  assert_equal dis ([a, b]);
+  assert_equal dis ([a, b, false]);
   ()
 
 
@@ -52,7 +56,7 @@ let test_counting_solver _ =
   let open Arrays in
   let a_ctx = Arrays.new_ctx fresh_var_array ensure_var_exists in
   let subdiv = Arrays.mk_full_subdiv a_ctx (Ninf, Pinf)
-               |> Arrays.equality_array a_ctx (Array_term "a") true
+               |> Arrays.equality_array a_ctx (Array_term("a", TBool)) true
   in
   let subdiv2 = Arrays.mk_full_subdiv a_ctx (Ninf, Pinf) in
   begin
@@ -65,7 +69,7 @@ let test_counting_solver _ =
     | Some { name = "a"; left_tree = None; right_tree = None; left_selection = Dont_care; right_selection = Dont_care; _ } -> ()
     | _ -> assert false
   end;
-  let subdiv2 = Arrays.equality_array a_ctx (Array_term "b") true subdiv2 in
+  let subdiv2 = Arrays.equality_array a_ctx (Array_term("b", TBool)) true subdiv2 in
   begin
     match subdiv2 with 
     | Some { name = "a";

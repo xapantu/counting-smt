@@ -163,7 +163,7 @@ and lisp_to_array =
   let open Lisp in
   function
   | Lisp_string x ->
-    Array_term x
+    Array_term(x, TBool)
   | l -> raise (Not_allowed_for_type (lisp_to_string l, "array"))
 and lisp_to_bool ?z:(z="") ctx l =
   let open Lisp in

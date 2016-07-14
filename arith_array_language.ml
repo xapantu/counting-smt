@@ -1,12 +1,17 @@
 exception Unprintable_elements of string
 exception Unbounded_interval
 
+type _ term_sort =
+  | Tint : int term_sort
+  | TBool: bool term_sort
+
+
 type _ term =
   | IValue : int -> int term
   | IVar : string * int -> int term
   | BValue : bool -> bool term
   | BVar : string * bool -> bool term
-  | Array_term : string -> bool array term
+  | Array_term : string * 'a term_sort -> 'a array term
   | Array_store : 'a array term * int term * 'a term -> 'a array term
   | Array_access : 'a array term * int term * bool (* last one is the negation *) -> 'a term
 
@@ -65,7 +70,7 @@ let rec term_to_string : type a. a term -> string = function
   | BVar(s, true) -> s
   | BVar(s, false) -> Format.sprintf "(not %s)" s
   | IValue i -> string_of_int i
-  | Array_term e ->
+  | Array_term(e, _) ->
     Format.eprintf "this array should not be printed@.";
     e
   | Array_access(tab, index, false) ->
@@ -97,7 +102,7 @@ let rec term_to_uid : type a. a term -> string = function
   | BVar(s, true) -> (sanitize s)
   | BVar(s, false) -> Format.sprintf "!not!%s!" (sanitize s)
   | IValue i -> string_of_int i
-  | Array_term e ->
+  | Array_term(e, _) ->
     raise (Unprintable_elements e)
   | _ -> failwith "no uid"
 

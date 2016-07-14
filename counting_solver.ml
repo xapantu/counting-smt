@@ -150,7 +150,7 @@ module Counting_solver(V:Variable_manager.VM) = struct
    * it is assumed that the array term is equal to the boolean *)
   let equality_array: array_ctx -> bool array term -> bool -> array_subdivision -> array_subdivision =
     fun ctx t value sub ->
-      let Array_term(name) = t in
+      let Array_term(name, TBool) = t in
       assume ctx name value sub
 
   (* Express the constraints needed for this subdivision to be consistent with the rest of the subdivision *)
@@ -300,8 +300,8 @@ module Counting_solver(V:Variable_manager.VM) = struct
    * the subdivision s *)
   let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision -> array_subdivision =
     fun ctx t1 t2 value sub ->
-    let Array_term(name1) = t1
-    and Array_term(name2) = t2 in
+    let Array_term(name1, TBool) = t1
+    and Array_term(name2, TBool) = t2 in
     (* split the cases, for instance if value = true, t1 = true = t2, and then t1 = false = t2 *)
     let mysub =
       array_subdivision_duplicate sub

@@ -244,7 +244,7 @@ module LA_SMT = struct
         | VBool(k) -> (modi && k) || (not modi && not k)
         | _ -> raise (TypeCheckingError (a, "bool"))
       end
-    | Array_access(Array_term(a), _, _) ->
+    | Array_access(Array_term(a, _), _, _) ->
       failwith (Format.sprintf "trying to get an array value from a model - should not happen: %s@." a)
     | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
 
