@@ -21,6 +21,7 @@ module Variable_manager (Formula:sig
   open Formula
   let vars = ref (Hashtbl.create 1000)
   let range = Hashtbl.create 10
+  let rels = ref (Hashtbl.create 100)
   let get_range = Hashtbl.find range
 
   let new_variables = React.new_event ()
@@ -28,17 +29,33 @@ module Variable_manager (Formula:sig
   let find a =
     Hashtbl.find !vars a
 
+  let fresh_var =
+    let i = ref 0 in
+    fun () ->
+      incr i;
+      "rel!" ^ string_of_int !i
+
   let use_var ?internal:(internal=false) sort name =
     let v = { name; sort; internal; } in
     Hashtbl.add !vars v.name v;
     React.event new_variables v
+
+  let use_var_for_rel (rel:rel) =
+    try
+      Hashtbl.find !rels rel
+    with
+    | Not_found ->
+      let v = { name = fresh_var (); sort = Bool; internal = true; } in
+      Hashtbl.add !vars v.name v;
+      Hashtbl.add !rels rel v;
+      React.event new_variables v; v
   
   let new_range: string -> bound -> bound -> unit =
     fun name b1 b2 ->
       Hashtbl.add range name (Range (b1, b2))
 
   let reset () =
-    Hashtbl.reset !vars; Hashtbl.reset range 
+    Hashtbl.reset !vars; Hashtbl.reset range; Hashtbl.reset !rels
   
   let constraints_on_sort sort name = match sort with
     | Int | Bool -> Theory_expr(Bool (BValue true))
@@ -68,6 +85,21 @@ module Variable_manager (Formula:sig
     with
     | Not_found -> raise (Unknown_sort_for_var(name))
 
+  let rec get_sort_for_term: type a. a term -> sort = function
+    | IVar(_) -> Int
+    | IValue(_) -> Int
+    | BVar(_) -> Bool
+    | BValue (_) -> Bool
+    | Array_term(a, _) ->
+      get_sort a
+    | Array_store(a, _, _) ->
+      get_sort_for_term a
+    | Array_access(a, _, _) ->
+      match get_sort_for_term a with
+      | Array(_, a) -> a
+      | _ -> failwith "humm this array is not an array!?"
+
+  
   let ensure_int name =
     match get_sort name with
     | Int | Range(_) -> ()

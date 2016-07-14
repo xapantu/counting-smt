@@ -10,12 +10,15 @@ module Mixed_solver (T: Theories.T) =
      * last assumptions assert, and ask for another model (which will NOT follow the last assumptions,
      * as it was unsat).
      **)
-    let rec solve_starting_from_model cards (m:T.premodel) =
+    let rec solve_starting_from_model cards (doms, (m:T.premodel)) =
       let open List in
       let constraints_cards =
         map (fun c ->
                 c, T.build_domain_for_construct m c.construct) cards in
       T.ensure_domains_consistency m (List.map snd constraints_cards);
+      iter (fun (f, d) ->
+          T.ensure_domain_fun m f d;
+        ) doms;
       iter (fun (c, d) ->
                 T.ensure_domain m c.var_name d;
         ) constraints_cards;

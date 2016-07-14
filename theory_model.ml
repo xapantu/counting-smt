@@ -30,6 +30,12 @@ module LA_SMT = struct
       type constraints = Arrays.array_subdivision * congruence
     end) 
 
+  module Array_solver = Array_solver.Array_solver (struct
+      module V = Variable_manager
+      type a = bool
+      let equality_to_rel a = Array_bool_equality a
+    end)
+
 
   type arrayed_interval = (Arrays.array_subdivision * congruence) * interval
   type arrayed_domain = arrayed_interval list
@@ -60,7 +66,7 @@ module LA_SMT = struct
   type expr = Formula.expr
 
   (* hum, there is one model which should be removed here *)
-  type premodel = {interval_manager:Interval_manager.interval_manager; array_ctx: Arrays.array_ctx; model: Arith_array_language.model; }
+  type premodel = {interval_manager:Interval_manager.interval_manager; array_ctx: Arrays.array_ctx; model: Arith_array_language.model; array_solver: Array_solver.context }
   type abstract_model = premodel
   type model = Arith_array_language.model
   type construct = { quantified_var:string; expr:expr; quantified_sort: sort; }
@@ -199,15 +205,18 @@ module LA_SMT = struct
   (* ok, so, ATM creating a new array context every time is way more costly, maybe it is a good heuristic to process
    * the first cardinalities first, I have no idea *)
   let a = ref (Arrays.new_ctx fresh_var_array ensure_var_exists)
-  let new_array_ctx () = !a 
+  let new_array_ctx () =
+    !a 
 
   let push f =
     send_to_solver "(push 1)";
     let old_v = Hashtbl.copy !Variable_manager.vars in
+    let old_rels = Hashtbl.copy !Variable_manager.rels in
     let open Arrays in
     let sub = array_subdivision_duplicate !a.hyps in
     f ();
     Variable_manager.vars := old_v;
+    Variable_manager.rels := old_rels;
     !a.hyps <- sub;
     send_to_solver "(pop 1)"
 
@@ -279,7 +288,7 @@ module LA_SMT = struct
         Format.sprintf "(=> %s %s)" smt_assumptions (expr_to_smt constraint_sum) |> assert_formula_str
       | [] -> ()
 
-  let ensure_domain premodel cardinality_variable domain =
+  let ensure_domain_fun premodel create_constraint domain =
     let interval_manager = premodel.interval_manager in
     let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
     begin
@@ -300,14 +309,9 @@ module LA_SMT = struct
             | _ ->
               String.concat " " l
               |> Format.sprintf "(+ %s)")
-        |> (fun res ->
-            Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0)))
-          )
-        |> (fun resulting_expression ->
-            Format.sprintf "(=> %s %s)"
-              smt_assumptions
-              (expr_to_smt resulting_expression)
-          )
+        |> create_constraint
+        |> Format.sprintf "(=> %s %s)"
+          smt_assumptions
       with
       | Unbounded_interval ->
         Format.sprintf "(=> %s false)" smt_assumptions
@@ -315,7 +319,11 @@ module LA_SMT = struct
     end
     |> assert_formula_str
 
-
+  let ensure_domain premodel cardinality_variable domain =
+    ensure_domain_fun premodel (fun res ->
+            expr_to_smt (Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0))))
+          ) domain
+  
   let make_domain_intersection premodel (d1:arrayed_domain) (d2:arrayed_domain) =
     let oracle a b =
       compare (get_val_from_model premodel.model a) (get_val_from_model premodel.model b)
@@ -440,6 +448,26 @@ module LA_SMT = struct
           []
         end
 
+  let replace_arrays ctx = 
+    let rec aux = function
+      | BEquality(Array_access(a, b, c), Array_access(d, e, f)) ->
+        let a = Array_solver.get_array_at ctx.array_solver a b c in
+        let b = Array_solver.get_array_at ctx.array_solver d e f in
+        BEquality(a, b)
+      | BEquality(Array_access(a, b, c), d) ->
+        let a = Array_solver.get_array_at ctx.array_solver a b c in
+        BEquality(a, d)
+      | BEquality(a, Array_access(d, e, f)) ->
+        let b = Array_solver.get_array_at ctx.array_solver d e f in
+        BEquality(a, b)
+      | BEquality(a, b) -> BEquality(a, b)
+      | Bool(Array_access(a, b, c)) ->
+        let a = Array_solver.get_array_at ctx.array_solver a b c in
+        Bool(a)
+      | a -> a
+    in
+    aux
+
   let build_domain_for_construct premodel cardinality =
     let rec expr_to_domain_aux a expr =
       match expr with
@@ -455,20 +483,66 @@ module LA_SMT = struct
         let d = expr_to_domain_aux a e in
         domain_neg a d
       | Theory_expr(e) ->
-        make_domain_from_expr cardinality.quantified_var a e
+        replace_arrays premodel e |> make_domain_from_expr cardinality.quantified_var a
     in
       expr_to_domain_aux premodel cardinality.expr
 
   let new_interval_manager () = new Interval_manager.interval_manager
   
-  let new_context () = { model = []; interval_manager = new_interval_manager (); array_ctx =  new_array_ctx (); }
+  let new_context () =
+    { model = [];
+      interval_manager = new_interval_manager ();
+      array_ctx =  new_array_ctx ();
+      array_solver = fst (Array_solver.context_from_equality []
+                            (fun _ -> assert false)) }
 
   let build_full_model (m:abstract_model) = m.model
 
   let build_premodel () =
     send_to_solver "(check-sat)";
     if is_sat () then
-      { model = get_model (); interval_manager = new_interval_manager (); array_ctx = new_array_ctx (); }
+      let model = get_model () in
+      let interval_manager = new_interval_manager () in
+      let array_oracle r =
+        match r with
+        | Array_bool_equality(_) ->
+          let bool_var = BVar ((Hashtbl.find !Variable_manager.rels r).name, true) in
+          let b = get_val_from_model model bool_var in
+          interval_manager#assume (BEquality (bool_var, BValue b));
+          b
+        | _ -> assert false
+      in
+      let array_solver, disequalities =
+        let all_equalities = Hashtbl.fold (fun rel var l ->
+            match rel with
+            | Array_bool_equality(a) -> a :: l
+            | _ -> assert false) !Variable_manager.rels []
+        in
+        Array_solver.context_from_equality all_equalities array_oracle
+      in
+
+      let premodel = { model; interval_manager; array_ctx = new_array_ctx (); array_solver } in
+
+      List.map (fun (a, b, equality) ->
+          assert (not equality);
+          let quantified_sort, interv = match Variable_manager.get_sort_for_term b with
+            | Array(Range(a), _) -> Range(a), a
+            | _ -> failwith "hum, this is not an array !?"
+          in
+          let expr = Variable_manager.use_quantified_var "z" quantified_sort (fun constr ->
+              And(constr, Theory_expr(BEquality(Array_access(a, IVar("z", 0), true), Array_access(b, IVar("z", 0), true))))
+            )
+          in
+          let dom = build_domain_for_construct premodel { quantified_var = "z"; expr; quantified_sort;}
+          in
+          (Format.sprintf "(> %s %s)" (interval_to_string interv))
+           , dom
+        )
+          disequalities
+          ,
+      premodel
+
+
     else
       raise Unsat
   
@@ -478,7 +552,7 @@ module LA_SMT = struct
       begin
         f ();
         let m = build_premodel () in
-        send_to_solver "(pop 1)"; m
+        send_to_solver "(pop 1)"; snd m
       end
     with
     | Unsat ->

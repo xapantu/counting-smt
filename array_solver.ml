@@ -8,7 +8,6 @@ module Array_solver(S: sig
     val equality_to_rel: a array equality -> rel
   end) = struct
   
-  module V = S.V
   type a = S.a
 
   module StrSet = Set.Make (struct type t = a array term
@@ -22,8 +21,6 @@ module Array_solver(S: sig
         | _ -> ()
 
   type context = (a array term, a array term * StrSet.t) Hashtbl.t
-
-  let _ = React.iter V.new_variables declare_variable
 
   let ensure_class (ctx:context) a =
     if not (Hashtbl.mem ctx a) then
@@ -83,11 +80,11 @@ module Array_solver(S: sig
         | AEquality(a, b) | ExtEquality(a, b) -> (a, b, oracle (S.equality_to_rel eq)) :: disequalities
       ) [] equalities
   
-  let get_array_at: context -> a array term -> int term -> a term = fun context myarray index ->
+  let get_array_at: context -> a array term -> int term -> bool -> a term = fun context myarray index neg ->
     ensure_class context myarray;
     let (repr, _) = get_class context myarray in
 
-    Array_access(repr, index, false)
+    Array_access(repr, index, neg)
 
 
 end

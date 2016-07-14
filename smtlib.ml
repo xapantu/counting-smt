@@ -272,23 +272,31 @@ let rec extract_cards ?z:(z="") l =
         | Array((Range(Expr l, Expr u)) as index_sort, _), Array(_) -> 
           let a_extracted, defs_a = extract_cards a in
           let b_extracted, defs_b = extract_cards b in
-          let ctx = ref @@ defs_a @ defs_b in
-          let array_size = Format.sprintf "(- %s %s)" (term_to_string u) (term_to_string l) in
-          let formula = Variable_manager.use_quantified_var "z" index_sort (fun constraint_on_sort ->
-              let f =
-                Format.sprintf "(= (select %s z) (select %s z))"
-                  (lisp_to_string a_extracted)
-                  (lisp_to_string b_extracted)
-                |> load_lisp_from_string
-                |> lisp_to_expr ctx
+          begin
+            match a_extracted, b_extracted with
+            | Lisp_string a, Lisp_string b ->
+              let rel = Array_bool_equality(ExtEquality(Array_term(a, TBool), Array_term(b, TBool))) in
+              let v = Variable_manager.use_var_for_rel rel in
+              Lisp_string v.name, defs_a @ defs_b
+            | _ ->
+              let ctx = ref @@ defs_a @ defs_b in
+              let array_size = Format.sprintf "(- %s %s)" (term_to_string u) (term_to_string l) in
+              let formula = Variable_manager.use_quantified_var "z" index_sort (fun constraint_on_sort ->
+                  let f =
+                    Format.sprintf "(= (select %s z) (select %s z))"
+                      (lisp_to_string a_extracted)
+                      (lisp_to_string b_extracted)
+                    |> load_lisp_from_string
+                    |> lisp_to_expr ctx
+                  in
+                  And(constraint_on_sort, f)
+                )
               in
-              And(constraint_on_sort, f)
-            )
-          in
-          let card_var = fresh_var () in
-          Lisp_rec [Lisp_string "=";Lisp_string card_var; Lisp_string array_size],
-          Card { var_name = card_var; construct = { expr=formula; quantified_var = "z"; quantified_sort = index_sort; } }
-          :: !ctx
+              let card_var = fresh_var () in
+              Lisp_rec [Lisp_string "=";Lisp_string card_var; Lisp_string array_size],
+              Card { var_name = card_var; construct = { expr=formula; quantified_var = "z"; quantified_sort = index_sort; } }
+              :: !ctx
+          end
         | e -> 
           let a_extracted, defs_a = extract_cards ~z a in
           let b_extracted, defs_b = extract_cards ~z b in
