@@ -2,6 +2,7 @@ module Mixed_solver (T: Theories.T) =
   struct
     type constructed_variables = { var_name: string; construct: T.construct; }
 
+
     (**
      * This function gets a model from the solver, then construct the values that are not
      * handled by the solver (counting counstraints, arrays, etc) under some assumptions
@@ -16,11 +17,11 @@ module Mixed_solver (T: Theories.T) =
         map (fun c ->
                 c, T.build_domain_for_construct m c.construct) cards in
       T.ensure_domains_consistency m (List.map snd constraints_cards);
-      iter (fun (f, d) ->
-          T.ensure_domain_fun m f d;
+      iter (fun (f, d, c) ->
+          T.ensure_domain_fun m f c d;
         ) doms;
       iter (fun (c, d) ->
-                T.ensure_domain m c.var_name d;
+                T.ensure_domain m c.var_name c.construct d;
         ) constraints_cards;
       try
         T.build_abstract_model m

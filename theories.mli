@@ -21,14 +21,14 @@ module type T = sig
   exception Unsat
 
   val build_domain_for_construct: premodel -> construct -> domain
-  val ensure_domain: premodel -> string -> domain -> unit
-  val ensure_domain_fun: premodel -> (string -> string) -> domain -> unit
+  val ensure_domain: premodel -> string -> construct -> domain -> unit
+  val ensure_domain_fun: premodel -> (string -> string) -> construct -> domain -> unit
   val ensure_domains_consistency: premodel -> domain list -> unit
   val domain_to_string: domain -> string
   val assert_formula: expr -> unit
   val sort_for_construct: construct -> sort
   
-  val build_premodel: unit -> (((string -> string) * domain) list) * premodel
+  val build_premodel: unit -> (((string -> string) * domain * construct) list) * premodel
   val build_abstract_model: premodel -> abstract_model
   val build_full_model: abstract_model -> model
 

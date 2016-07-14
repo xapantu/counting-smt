@@ -66,7 +66,7 @@ module LA_SMT = struct
   type expr = Formula.expr
 
   (* hum, there is one model which should be removed here *)
-  type premodel = {interval_manager:Interval_manager.interval_manager; array_ctx: Arrays.array_ctx; model: Arith_array_language.model; array_solver: Array_solver.context }
+  type premodel = {interval_manager:Interval_manager.interval_manager; array_ctx: Arrays.array_ctx; model: Arith_array_language.model; array_solver: Array_solver.context; basic_assumptions: rel list;  }
   type abstract_model = premodel
   type model = Arith_array_language.model
   type construct = { quantified_var:string; expr:expr; quantified_sort: sort; }
@@ -159,6 +159,7 @@ module LA_SMT = struct
 
   let get_model () =
     let fetched_variables = ref (Variable_manager.find_all var_is_raw) in
+    (*Format.eprintf "%d@." @@ List.length !fetched_variables;*)
     let pop_variable a =
       let rec aux = function
         | [] -> raise Not_found
@@ -207,9 +208,13 @@ module LA_SMT = struct
   let a = ref (Arrays.new_ctx fresh_var_array ensure_var_exists)
   let new_array_ctx () =
     !a 
+  
+  let last_assumptions = ref []
+
 
   let push f =
     send_to_solver "(push 1)";
+    last_assumptions := [];
     let old_v = Hashtbl.copy !Variable_manager.vars in
     let old_rels = Hashtbl.copy !Variable_manager.rels in
     let open Arrays in
@@ -248,10 +253,13 @@ module LA_SMT = struct
     | BValue(b) -> b
     | BVar(a, modi) ->
       begin
+        try
         let k = snd @@ List.find (fun (v,b) -> v.name = a) model in
         match k with
         | VBool(k) -> (modi && k) || (not modi && not k)
         | _ -> raise (TypeCheckingError (a, "bool"))
+        with
+        | Not_found -> failwith ("couldn't get variable " ^ a ^ "from model")
       end
     | Array_access(Array_term(a, _), _, _) ->
       failwith (Format.sprintf "trying to get an array value from a model - should not happen: %s@." a)
@@ -288,42 +296,6 @@ module LA_SMT = struct
         Format.sprintf "(=> %s %s)" smt_assumptions (expr_to_smt constraint_sum) |> assert_formula_str
       | [] -> ()
 
-  let ensure_domain_fun premodel create_constraint domain =
-    let interval_manager = premodel.interval_manager in
-    let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
-    begin
-      try
-        domain
-        |> List.map (fun ((sub, congruence), interval) ->
-            if Arrays.is_top sub then
-              [interval_to_string interval]
-            else
-              Arrays.array_sub_to_string premodel.array_ctx (interval_manager#get_slices_of_ordering interval) sub interval
-          )
-        |> List.concat
-        |> List.filter ((<>) "0")
-        |> (fun l ->
-          match List.length l with
-            | 0 -> "0"
-            | 1 -> List.hd l
-            | _ ->
-              String.concat " " l
-              |> Format.sprintf "(+ %s)")
-        |> create_constraint
-        |> Format.sprintf "(=> %s %s)"
-          smt_assumptions
-      with
-      | Unbounded_interval ->
-        Format.sprintf "(=> %s false)" smt_assumptions
-
-    end
-    |> assert_formula_str
-
-  let ensure_domain premodel cardinality_variable domain =
-    ensure_domain_fun premodel (fun res ->
-            expr_to_smt (Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0))))
-          ) domain
-  
   let make_domain_intersection premodel (d1:arrayed_domain) (d2:arrayed_domain) =
     let oracle a b =
       compare (get_val_from_model premodel.model a) (get_val_from_model premodel.model b)
@@ -486,6 +458,46 @@ module LA_SMT = struct
         replace_arrays premodel e |> make_domain_from_expr cardinality.quantified_var a
     in
       expr_to_domain_aux premodel cardinality.expr
+  
+  let ensure_domain_fun premodel create_constraint construct domain =
+    let p = { premodel with interval_manager = new Interval_manager.interval_manager } in
+    List.iter p.interval_manager#assume p.basic_assumptions;
+    let domain = build_domain_for_construct p construct in
+    let interval_manager = premodel.interval_manager in
+    let smt_assumptions = assumptions_to_expr p.interval_manager#assumptions |> expr_to_smt in
+    begin
+      try
+        domain
+        |> List.map (fun ((sub, congruence), interval) ->
+            if Arrays.is_top sub then
+              [interval_to_string interval]
+            else
+              Arrays.array_sub_to_string premodel.array_ctx (interval_manager#get_slices_of_ordering interval) sub interval
+          )
+        |> List.concat
+        |> List.filter ((<>) "0")
+        |> (fun l ->
+          match List.length l with
+            | 0 -> "0"
+            | 1 -> List.hd l
+            | _ ->
+              String.concat " " l
+              |> Format.sprintf "(+ %s)")
+        |> create_constraint
+        |> Format.sprintf "(=> %s %s)"
+          smt_assumptions
+      with
+      | Unbounded_interval ->
+        Format.sprintf "(=> %s false)" smt_assumptions
+
+    end
+    |> assert_formula_str
+
+  let ensure_domain premodel cardinality_variable construct domain =
+    ensure_domain_fun premodel (fun res ->
+            expr_to_smt (Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0))))
+          ) construct domain
+  
 
   let new_interval_manager () = new Interval_manager.interval_manager
   
@@ -494,7 +506,8 @@ module LA_SMT = struct
       interval_manager = new_interval_manager ();
       array_ctx =  new_array_ctx ();
       array_solver = fst (Array_solver.context_from_equality []
-                            (fun _ -> assert false)) }
+                            (fun _ -> assert false));
+      basic_assumptions = [];}
 
   let build_full_model (m:abstract_model) = m.model
 
@@ -521,7 +534,7 @@ module LA_SMT = struct
         Array_solver.context_from_equality all_equalities array_oracle
       in
 
-      let premodel = { model; interval_manager; array_ctx = new_array_ctx (); array_solver } in
+      let premodel = { model; interval_manager; array_ctx = new_array_ctx (); array_solver; basic_assumptions = []; } in
 
       List.map (fun (a, b, equality) ->
           assert (not equality);
@@ -533,20 +546,22 @@ module LA_SMT = struct
               And(constr, Theory_expr(BEquality(Array_access(a, IVar("z", 0), true), Array_access(b, IVar("z", 0), true))))
             )
           in
-          let dom = build_domain_for_construct premodel { quantified_var = "z"; expr; quantified_sort;}
+          let construct =  { quantified_var = "z"; expr; quantified_sort;} in
+          let dom = build_domain_for_construct premodel construct
           in
           (Format.sprintf "(> %s %s)" (interval_to_string interv))
-           , dom
+           , dom, construct
         )
           disequalities
           ,
-      premodel
+          { premodel with basic_assumptions = interval_manager#assumptions; }
 
 
     else
       raise Unsat
   
   let build_abstract_model_in_context f =
+
     send_to_solver "(push 1)";
     try
       begin
@@ -564,6 +579,22 @@ module LA_SMT = struct
   let build_abstract_model premodel =
     let im = premodel.interval_manager in
     build_abstract_model_in_context (fun () ->
+        (*Format.eprintf "difference with the last one@.";
+        List.iter (fun e -> match e with
+            | Greater(a, b) ->
+              if (get_val_from_model premodel.model a) < (get_val_from_model premodel.model b) then
+                Format.eprintf "%s@." (rel_to_smt e)
+            | IEquality(a, b) ->
+              if (get_val_from_model premodel.model a) <> (get_val_from_model premodel.model b) then
+                Format.eprintf "%s@." (rel_to_smt e)
+            | BEquality(a, b) ->
+              if (get_val_from_model premodel.model a) <> (get_val_from_model premodel.model b) then
+                Format.eprintf "%s@." (rel_to_smt e)
+            | Bool(a) ->
+              if not (get_val_from_model premodel.model a) then
+                Format.eprintf "%s@." (rel_to_smt e)
+          ) !last_assumptions;*)
+        last_assumptions := im#assumptions;
         assumptions_to_expr im#assumptions |> expr_to_smt |> assert_formula_str)
 
   let assert_formula e =
