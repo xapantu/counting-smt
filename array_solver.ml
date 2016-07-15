@@ -5,7 +5,7 @@ open Lisp
 module Array_solver(S: sig
     module V:Variable_manager.VM
     type a
-    val equality_to_rel: a array equality -> rel
+    val equality_to_rel: a array equality -> bool term
   end) = struct
   
   type a = S.a
@@ -55,8 +55,18 @@ module Array_solver(S: sig
     ensure_class ctx b;
     Hashtbl.find ctx a <> Hashtbl.find ctx b
 
+  let rec get_array_at: context -> a array term -> int term -> bool -> a term = fun context myarray index neg ->
+    ensure_class context myarray;
+    let (repr, _) = get_class context myarray in
+    match repr with
+    | Array_store(a, b, c) ->
+      let a = get_array_at context a index neg in
+      Ite(Int_equality(Equality(b, index)), c, a)
+    | Array_term(_) ->
+      Array_access(repr, index, neg)
+
   (* Record the equalities between the arrays, might raise Unsat at some point *)
-  let context_from_equality: a array equality list -> (rel -> bool) -> (context * (a array term * a array term * bool) list) = fun equalities oracle ->
+  let context_from_equality: a array equality list (*-> a equality list*) -> (bool term -> bool) -> (context * (a array term * a array term * bool) list (**  a equality list *)) = fun equalities_array (*equalities_elements*) oracle ->
     let context = Hashtbl.create 10 in
     context, List.fold_left (fun disequalities eq ->
         match eq with
@@ -78,13 +88,13 @@ module Array_solver(S: sig
                 raise Unsat
             end
         | AEquality(a, b) | ExtEquality(a, b) -> (a, b, oracle (S.equality_to_rel eq)) :: disequalities
-      ) [] equalities
+      ) [] equalities_array
+    (*,
+    List.fold_left (fun disequalities eq ->
+        match eq with
+        | Bool_equality(Array_access(a, i, neg), c) ->
+          let a = get_array_at 
+        | a -> (Format.eprintf "equality not handled@."; a :: disequalities)*)
   
-  let get_array_at: context -> a array term -> int term -> bool -> a term = fun context myarray index neg ->
-    ensure_class context myarray;
-    let (repr, _) = get_class context myarray in
-
-    Array_access(repr, index, neg)
-
 
 end

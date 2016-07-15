@@ -11,7 +11,7 @@ module Variable_manager (Formula:sig
   type expr =
     | And of expr * expr
     | Or of expr * expr
-    | Theory_expr of rel
+    | Theory_expr of bool term
     | Not of expr
   end) = struct
 
@@ -40,7 +40,7 @@ module Variable_manager (Formula:sig
     Hashtbl.add !vars v.name v;
     React.event new_variables v
 
-  let use_var_for_rel (rel:rel) =
+  let use_var_for_rel (rel:bool term) =
     try
       Hashtbl.find !rels rel
     with
@@ -58,7 +58,7 @@ module Variable_manager (Formula:sig
     Hashtbl.reset !vars; Hashtbl.reset range; Hashtbl.reset !rels
   
   let constraints_on_sort sort name = match sort with
-    | Int | Bool -> Theory_expr(Bool (BValue true))
+    | Int | Bool -> Theory_expr(BValue true)
     | Range(Expr a, Expr b) -> And(Theory_expr(Greater(b, IVar(name, 1))), Theory_expr(Greater(IVar(name, 0), a)))
     | Range(Ninf, Expr b) -> Theory_expr(Greater(b, IVar(name, 1)))
     | Range(Expr a, Pinf) -> Theory_expr(Greater(IVar(name, 0), a))
@@ -92,6 +92,12 @@ module Variable_manager (Formula:sig
     | BValue (_) -> Bool
     | Array_term(a, _) ->
       get_sort a
+    | Ite(a, b, c) -> get_sort_for_term b
+    | Mod(_) -> Bool
+    | Greater(_) -> Bool
+    | Int_equality(_) -> Bool
+    | Bool_equality(_)  -> Bool
+    | Array_bool_equality(_) -> Bool
     | Array_store(a, _, _) ->
       get_sort_for_term a
     | Array_access(a, _, _) ->

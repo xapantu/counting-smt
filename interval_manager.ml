@@ -15,7 +15,7 @@ type constrained_domain = constrained_interval list
 
 class interval_manager = object(this)
 
-  val mutable assumptions : rel list  = []
+  val mutable assumptions : bool term list  = []
   val mutable ordering : int term list list = []
                                           
   method assume a =
@@ -40,12 +40,11 @@ class interval_manager = object(this)
       | _ -> true
     in
     if must_be_added then
-      ( if (rel_to_smt a) = "(>= (+ |s2.source| 1) (+ |s0.source| 1))" then raise Not_found;
-      assumptions <- a :: assumptions)
+      assumptions <- a :: assumptions
                     
   method print_assumptions =
     List.iter (fun l ->
-        Format.eprintf "%s@." (rel_to_smt l)) assumptions
+        Format.eprintf "%s@." (term_to_string l)) assumptions
 
   method print_ordering =
     List.iter (fun l ->

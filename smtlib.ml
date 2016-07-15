@@ -113,7 +113,7 @@ let rec lisp_to_expr ?z:(z="") ctx l =
     | Lisp_rec(Lisp_string "or" :: a :: q) ->
       Or (lisp_to_expr ~z ctx a, lisp_to_expr ~z ctx (Lisp_rec (Lisp_string "or" :: q)))
     | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
-      Theory_expr (Bool (lisp_to_bool ~z ctx l))
+      Theory_expr (lisp_to_bool ~z ctx l)
     | Lisp_rec(Lisp_string ">=" :: a :: b :: []) when a = Lisp_string z || b = Lisp_string z ->
       Theory_expr (Greater (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
     | Lisp_rec(Lisp_string ">=" :: a :: b :: []) ->
@@ -152,28 +152,33 @@ let rec lisp_to_expr ?z:(z="") ctx l =
         | _ -> assert(false)
       end
     | Lisp_true | Lisp_false | Lisp_string _ ->
-      Theory_expr (Bool (lisp_to_bool ~z ctx l))
+      Theory_expr (lisp_to_bool ~z ctx l)
     | _ ->
       raise (Not_allowed (lisp_to_string l))
   with
   | TypeCheckingError(_) as e ->
     Format.eprintf "error while typechecking %s@." @@ lisp_to_string l;
     raise e
-and lisp_to_array =
+and lisp_to_array ctx =
   let open Lisp in
   function
   | Lisp_string x ->
     Array_term(x, TBool)
+  | Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) ->
+    let a = lisp_to_array ctx a in
+    let b = lisp_to_int_texpr ctx b ~z:"" in
+    let c = lisp_to_bool ctx c in
+    Array_store(a, b, c)
   | l -> raise (Not_allowed_for_type (lisp_to_string l, "array"))
 and lisp_to_bool ?z:(z="") ctx l =
   let open Lisp in
   match l with
   | Lisp_rec(Lisp_string "select" :: a :: b :: []) ->
-     Array_access (lisp_to_array a, lisp_to_int_texpr ~z ctx b, true)
+     Array_access (lisp_to_array ctx a, lisp_to_int_texpr ~z ctx b, true)
   | Lisp_string(z) -> (Variable_manager.ensure_bool z; BVar(z, true))
   | Lisp_rec(Lisp_string "not" :: a :: []) ->
     let a = lisp_to_bool ~z ctx a in
-    apply_not a
+    not_term a
   | Lisp_true -> BValue true
   | Lisp_false -> BValue false
   | _ ->
@@ -230,7 +235,7 @@ let rec extract_cards ?z:(z="") l =
       Def (Lisp_rec [Lisp_string "="; Lisp_string card_var; Lisp_string "1"]) ::
       Card { var_name = card_var; construct = { expr = formula; quantified_var = "z"; quantified_sort = Int; } } ::
       !ctx
-    | Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) when b <> Lisp_string z ->
+    (*| Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) when b <> Lisp_string z ->
       let a_extracted, defs_a = extract_cards a in
       let b_extracted, defs_b = extract_cards b in
       let c_extracted, defs_c = extract_cards c in
@@ -262,7 +267,7 @@ let rec extract_cards ?z:(z="") l =
       Lisp_string result_of_store,
       Def (Lisp_rec [Lisp_string "="; array_size; Lisp_string card_var]) ::
       Card { var_name = card_var;  construct = { expr=formula; quantified_var = "z"; quantified_sort = index_sort; } } ::
-      !ctx
+      !ctx*)
     | Lisp_rec (Lisp_string "forall" :: ((Lisp_rec (Lisp_rec (Lisp_string a :: Lisp_string b :: []) :: []) :: _) as q) ) ->
       extract_cards (Lisp_rec (Lisp_string "=" :: Lisp_string (range_to_string (Variable_manager.get_range b)) :: Lisp_rec (Lisp_string "#" :: q) :: []))
     | Lisp_rec(Lisp_string "=" :: a :: b :: []) ->
@@ -272,30 +277,12 @@ let rec extract_cards ?z:(z="") l =
         | Array((Range(Expr l, Expr u)) as index_sort, _), Array(_) -> 
           let a_extracted, defs_a = extract_cards a in
           let b_extracted, defs_b = extract_cards b in
+          let ctx = ref @@ defs_a @ defs_b in
           begin
-            match a_extracted, b_extracted with
-            | Lisp_string a, Lisp_string b ->
-              let rel = Array_bool_equality(ExtEquality(Array_term(a, TBool), Array_term(b, TBool))) in
+            let a, b = lisp_to_array ctx a_extracted, lisp_to_array ctx b_extracted in
+              let rel = Array_bool_equality(ExtEquality(a, b)) in
               let v = Variable_manager.use_var_for_rel rel in
-              Lisp_string v.name, defs_a @ defs_b
-            | _ ->
-              let ctx = ref @@ defs_a @ defs_b in
-              let array_size = Format.sprintf "(- %s %s)" (term_to_string u) (term_to_string l) in
-              let formula = Variable_manager.use_quantified_var "z" index_sort (fun constraint_on_sort ->
-                  let f =
-                    Format.sprintf "(= (select %s z) (select %s z))"
-                      (lisp_to_string a_extracted)
-                      (lisp_to_string b_extracted)
-                    |> load_lisp_from_string
-                    |> lisp_to_expr ctx
-                  in
-                  And(constraint_on_sort, f)
-                )
-              in
-              let card_var = fresh_var () in
-              Lisp_rec [Lisp_string "=";Lisp_string card_var; Lisp_string array_size],
-              Card { var_name = card_var; construct = { expr=formula; quantified_var = "z"; quantified_sort = index_sort; } }
-              :: !ctx
+              Lisp_string v.name, !ctx
           end
         | e -> 
           let a_extracted, defs_a = extract_cards ~z a in

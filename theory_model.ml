@@ -20,8 +20,8 @@ module LA_SMT = struct
   open Arith_array_language
   
   module Formula = IFormula(struct
-      type texpr = rel
-      let texpr_to_smt = rel_to_smt
+      type texpr = bool term
+      let texpr_to_smt = term_to_string
       type tsort = sort
     end)
 
@@ -68,7 +68,7 @@ module LA_SMT = struct
   type expr = Formula.expr
 
   (* hum, there is one model which should be removed here *)
-  type premodel = {interval_manager:Interval_manager.interval_manager; array_ctx: Arrays.array_ctx; model: Arith_array_language.model; array_solver: Array_solver.context; basic_assumptions: rel list;  }
+  type premodel = {interval_manager:Interval_manager.interval_manager; array_ctx: Arrays.array_ctx; model: Arith_array_language.model; array_solver: Array_solver.context; basic_assumptions: bool term list;  }
   type abstract_model = premodel
   type model = Arith_array_language.model
   type construct = { quantified_var:string; expr:expr; quantified_sort: sort; }
@@ -82,7 +82,7 @@ module LA_SMT = struct
     (i:Interval_manager.interval_manager)
 
   let assumptions_to_expr l =
-    if l = [] then Theory_expr (Bool(BValue(true)))
+    if l = [] then Theory_expr (BValue(true))
         else List.fold_left (fun l s ->
         And(l, Theory_expr(s))) (Theory_expr (List.hd l)) (List.tl l)
 
@@ -134,7 +134,7 @@ module LA_SMT = struct
       Variable_manager.use_var Int a;
       match constr with
       | None -> ()
-      | Some s -> assert_formula_str (rel_to_smt s)
+      | Some s -> assert_formula_str (term_to_string s)
   
   let reset_solver () =
     close_in !solver_in; close_out !solver_out;
@@ -263,13 +263,10 @@ module LA_SMT = struct
         with
         | Not_found -> failwith ("couldn't get variable " ^ a ^ "from model")
       end
-    | Array_access(Array_term(a, _), _, _) ->
-      failwith (Format.sprintf "trying to get an array value from a model - should not happen: %s@." a)
-    | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
-    | _ -> assert false
+    | e -> failwith @@ Format.sprintf "couldn't get that %s from model" (term_to_string e)
 
   let oracle_rel interval_manager model r =
-    let rec assert_equality: type a. (a equality -> rel) -> a equality -> bool = fun f eq ->
+    let rec assert_equality: type a. (a equality -> bool term) -> a equality -> bool = fun f eq ->
       match eq with
       | Equality(a, b) ->
         if a = b then true
@@ -283,6 +280,10 @@ module LA_SMT = struct
           a_val = b_val
       | NoEquality(a, b) ->
         not (assert_equality f (Equality(a, b)))
+      | AEquality(a, b) ->
+        failwith "non extensional equality cannot be asserted"
+      | ExtEquality(a, b) ->
+        failwith "extensional equality cannot be asserted"
     in
     match r with
     | Array_bool_equality(_) ->
@@ -294,14 +295,14 @@ module LA_SMT = struct
       assert_equality (fun a -> Int_equality a) a
     | Bool_equality(a) ->
       assert_equality (fun a -> Bool_equality a) a
-    | Bool(a) ->
-      if a = BValue true then true
-      else
-        let a_val = get_val_from_model model a in
+    | BValue true -> true
+    | BValue false -> false
+    | BVar(_) ->
+        let a_val = get_val_from_model model r in
         if a_val then
-          interval_manager#assume (Bool(a))
+          interval_manager#assume r
         else
-          interval_manager#assume(Bool(not_term a));
+          interval_manager#assume (not_term r);
         a_val
     | Greater(a, b) ->
       if a = b then true
@@ -395,20 +396,26 @@ module LA_SMT = struct
       assert (index = IVar(var_name, 0)); 
       let a_val = get_val_from_model model a in
       if a_val then
-        assum#assume((Bool(a)):rel)
+        assum#assume a
       else
-        assum#assume(Bool(not_term a));
+        assum#assume (not_term a);
       [(Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (1, [0])), (Ninf, Pinf)]
     | Bool_equality(Equality(a, Array_access(tab, index, neg))) ->
       make_domain_from_expr var_name premodel (Bool_equality(Equality(Array_access(tab, index, neg), a)))
-    | Bool(Array_access(tab, index, neg)) ->
+    | Array_access(tab, index, neg) ->
       (assert (index = IVar(var_name, 0));
        [(Arrays.equality_array actx tab neg array_init, (1, [0])), (Ninf, Pinf)])
-    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) | Bool(_) ->
+    | Ite(r, a, b) ->
+      let domain_cond = make_domain_from_expr var_name premodel r in
+      let fst_domain = make_domain_intersection premodel domain_cond (make_domain_from_expr var_name premodel a) in
+      let snd_domain =  make_domain_intersection premodel (domain_neg premodel domain_cond) (make_domain_from_expr var_name premodel b) in
+      make_domain_union premodel fst_domain snd_domain
+    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) | BVar(_) | BValue(_)->
       if oracle_rel e then
         [auxiliary_constraints, (Ninf, Pinf)]
       else
         []
+    | Mod(_) -> assert false
 
   let replace_arrays ctx = 
     let rec aux = function
@@ -423,12 +430,56 @@ module LA_SMT = struct
         let b = Array_solver.get_array_at ctx.array_solver d e f in
         bool_equality a b
       | Bool_equality(Equality(a, b)) -> Bool_equality(Equality(a, b))
-      | Bool(Array_access(a, b, c)) ->
-        let a = Array_solver.get_array_at ctx.array_solver a b c in
-        Bool(a)
+      | Array_access(a, b, c) ->
+        Array_solver.get_array_at ctx.array_solver a b c
       | a -> a
     in
     aux
+  
+  let lift_ite = fun ctx a ->
+    let rec aux: type a. a term -> a term = function
+      | Bool_equality(a) ->
+        aux_equality a (fun a -> Bool_equality a)
+      | Int_equality(a) ->
+        aux_equality a (fun a -> Int_equality a)
+      | Greater(a, b) ->
+        let a' = aux a in
+        let b' = aux b in
+        if a' <> a || b' <> b then
+          aux (Greater(a', b'))
+        else
+          Greater (a', b')
+      | Ite(a, b, c) ->
+        Ite(a, aux b, aux c)
+      | a -> a
+    and
+      aux_equality: type a. a equality -> (a equality -> bool term) -> bool term = fun eq f ->
+      match eq with
+      | Equality(Ite(a, b, c), d) ->
+        aux @@ Ite(a, aux_equality (Equality(b, d)) f, aux_equality (Equality (c, d)) f)
+      | Equality(d, Ite(a, b, c)) ->
+        aux @@ Ite(a, aux_equality (Equality(b, d)) f, aux_equality (Equality (c, d)) f)
+      | NoEquality(Ite(a, b, c), d) ->
+        aux @@ Ite(a, aux_equality (NoEquality(b, d)) f, aux_equality (NoEquality (c, d)) f)
+      | NoEquality(d, Ite(a, b, c)) ->
+        aux @@ Ite(a, aux_equality (NoEquality(b, d)) f, aux_equality (NoEquality (c, d)) f)
+      | Equality(a, b) ->
+        let a' = aux a in
+        let b' = aux b in
+        if a' <> a || b' <> b then
+          aux_equality (Equality(a', b')) f
+        else
+          f (Equality(a', b'))
+      | NoEquality(a, b) ->
+        let a' = aux a in
+        let b' = aux b in
+        if a' <> a || b' <> b then
+          aux_equality (NoEquality(a', b')) f
+        else
+          f (NoEquality(a', b'))
+      | a -> f a
+    in
+    aux a
 
   let build_domain_for_construct premodel cardinality =
     let rec expr_to_domain_aux a expr =
@@ -445,7 +496,8 @@ module LA_SMT = struct
         let d = expr_to_domain_aux a e in
         domain_neg a d
       | Theory_expr(e) ->
-        replace_arrays premodel e |> make_domain_from_expr cardinality.quantified_var a
+        let f = replace_arrays premodel e |> lift_ite premodel in
+        make_domain_from_expr cardinality.quantified_var a f
     in
       expr_to_domain_aux premodel cardinality.expr
   
@@ -525,7 +577,6 @@ module LA_SMT = struct
       let premodel = { model; interval_manager; array_ctx = new_array_ctx (); array_solver; basic_assumptions = []; } in
 
       List.map (fun (a, b, equality) ->
-          assert (not equality);
           let quantified_sort, interv = match Variable_manager.get_sort_for_term b with
             | Array(Range(a), _) -> Range(a), a
             | _ -> failwith "hum, this is not an array !?"
@@ -537,7 +588,10 @@ module LA_SMT = struct
           let construct =  { quantified_var = "z"; expr; quantified_sort;} in
           let dom = build_domain_for_construct premodel construct
           in
+          (if not equality then
           (Format.sprintf "(> %s %s)" (interval_to_string interv))
+          else
+          (Format.sprintf "(= %s %s)" (interval_to_string interv)))
            , dom, construct
         )
           disequalities
@@ -571,16 +625,16 @@ module LA_SMT = struct
         List.iter (fun e -> match e with
             | Greater(a, b) ->
               if (get_val_from_model premodel.model a) < (get_val_from_model premodel.model b) then
-                Format.eprintf "%s@." (rel_to_smt e)
+                Format.eprintf "%s@." (term_to_string e)
             | IEquality(a, b) ->
               if (get_val_from_model premodel.model a) <> (get_val_from_model premodel.model b) then
-                Format.eprintf "%s@." (rel_to_smt e)
+                Format.eprintf "%s@." (term_to_string e)
             | BEquality(a, b) ->
               if (get_val_from_model premodel.model a) <> (get_val_from_model premodel.model b) then
-                Format.eprintf "%s@." (rel_to_smt e)
+                Format.eprintf "%s@." (term_to_string e)
             | Bool(a) ->
               if not (get_val_from_model premodel.model a) then
-                Format.eprintf "%s@." (rel_to_smt e)
+                Format.eprintf "%s@." (term_to_string e)
           ) !last_assumptions;*)
         last_assumptions := im#assumptions;
         assumptions_to_expr im#assumptions |> expr_to_smt |> assert_formula_str)

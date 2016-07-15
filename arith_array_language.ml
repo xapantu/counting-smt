@@ -14,6 +14,19 @@ type _ term =
   | Array_term : string * 'a term_sort -> 'a array term
   | Array_store : 'a array term * int term * 'a term -> 'a array term
   | Array_access : 'a array term * int term * bool (* last one is the negation *) -> 'a term
+  | Ite: bool term * 'a term * 'a term -> 'a term
+  | Mod: int term * int * int -> bool term
+  | Greater: int term * int term -> bool term
+  | Array_bool_equality: bool array equality -> bool term
+  | Int_equality: int equality -> bool term
+  | Bool_equality: bool equality -> bool term
+
+and _ equality =
+  | AEquality : 'a array term * 'a array term -> 'a array equality
+  | NoEquality : 'a term * 'a term -> 'a equality
+  | ExtEquality : 'a array term * 'a array term -> 'a array equality
+  | Equality : 'a term * 'a term -> 'a equality
+
 
 type arithmetic_expression =
   | APlus of arithmetic_expression * arithmetic_expression
@@ -24,20 +37,6 @@ type concrete_value =
   | VBool of bool
   | VInt of int
 
-type _ equality =
-  | AEquality : 'a array term * 'a array term -> 'a array equality
-  | NoEquality : 'a term * 'a term -> 'a equality
-  | ExtEquality : 'a array term * 'a array term -> 'a array equality
-  | Equality : 'a term * 'a term -> 'a equality
-
-
-type rel =
-  | Mod of int term * int * int
-  | Greater of int term * int term
-  | Bool of bool term
-  | Array_bool_equality of bool array equality
-  | Int_equality of int equality
-  | Bool_equality of bool equality
 
 let int_equality a b = Int_equality(Equality(a, b))
 
@@ -61,11 +60,6 @@ type var = { name: string; sort: sort; internal: bool; }
 
 type assignation = var * concrete_value
 type model = assignation list
-
-let apply_not: bool term -> bool term = function
-  | BValue(b) -> BValue(not b)
-  | BVar(s, b) -> BVar(s, not b)
-  | Array_access(a, i, v) -> Array_access(a, i, not v)
 
 let rec term_to_string : type a. a term -> string = function
   | IVar (s, 0) -> s
@@ -91,6 +85,31 @@ let rec term_to_string : type a. a term -> string = function
     let index = term_to_string index in
     Format.eprintf "this array should not be printed@.";
     Format.sprintf "(select %s %s)" tab index
+  | Ite(a, b, c) ->
+    Format.sprintf "(ite %s %s %s)" (term_to_string a) (term_to_string b) (term_to_string c)
+  | Array_store(tab, index, write) ->
+    Format.eprintf "this array should not be printed@.";
+    let tab = term_to_string tab in
+    let index = term_to_string index in
+    let write = term_to_string write in
+    Format.sprintf "(store %s %s %s)" tab index write
+  | Greater(e1, e2) ->
+    Format.sprintf "(>= %s %s)" (term_to_string e1) (term_to_string e2)
+  | Int_equality(a) ->
+    eq_to_smt a
+  | Bool_equality(a) ->
+    eq_to_smt a
+  | Array_bool_equality(a) ->
+    eq_to_smt a
+and eq_to_smt: type a. a equality -> string = function
+  | Equality(e1, e2) ->
+    Format.sprintf "(= %s %s)" (term_to_string e1) (term_to_string e2)
+  | ExtEquality(e1, e2) ->
+    Format.sprintf "(= %s %s)" (term_to_string e1) (term_to_string e2)
+  | AEquality(e1, e2) ->
+    Format.sprintf "(nexteq %s %s)" (term_to_string e1) (term_to_string e2)
+  | NoEquality(e1, e2) ->
+    Format.sprintf "(not %s)" (eq_to_smt (Equality(e1, e2)))
 
 let replace input output =
       Str.global_replace (Str.regexp_string input) output
@@ -112,20 +131,6 @@ let rec term_to_uid : type a. a term -> string = function
     raise (Unprintable_elements e)
   | _ -> failwith "no uid"
 
-let rec rel_to_smt = function
-  | Greater(e1, e2) ->
-    Format.sprintf "(>= %s %s)" (term_to_string e1) (term_to_string e2)
-  | Int_equality(a) ->
-    eq_to_smt a
-  | Bool_equality(a) ->
-    eq_to_smt a
-  | Bool(b) ->
-    term_to_string b
-and eq_to_smt: type a. a equality -> string = function
-  | Equality(e1, e2) ->
-    Format.sprintf "(= %s %s)" (term_to_string e1) (term_to_string e2)
-  | NoEquality(e1, e2) ->
-    Format.sprintf "(not %s)" (eq_to_smt (Equality(e1, e2)))
 
 let rec arith_expr_to_string = function
   | ATerm e -> term_to_string e
@@ -168,10 +173,11 @@ let minus:int -> int term -> int term = fun n -> function
   | IVar(a, i) -> IVar(a, i - n)
   | IValue(i) -> IValue (i - n)
 
-let not_term: bool term -> bool term = function
+let rec not_term: bool term -> bool term = function
   | BValue(k) -> BValue(not k)
   | BVar(s, k) -> BVar (s, not k)
   | Array_access(tab, index, k) -> Array_access(tab, index, not k)
+  | Ite(a, b, c) -> Ite(a, not_term b, not_term c)
 
 let bound_inf_to_string = function
   | Ninf | Pinf -> "inf"

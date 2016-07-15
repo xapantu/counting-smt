@@ -29,7 +29,7 @@ module Counting_solver(V:Variable_manager.VM) = struct
   type array_ctx = {
                      mutable hyps: hyp_tree option;
                      fresh_var: unit -> string;
-                     ensure_var_exists: ?constraints:rel option -> string -> unit;
+                     ensure_var_exists: ?constraints:bool term option -> string -> unit;
                    }
 
   let selection_to_str = function
@@ -158,7 +158,7 @@ module Counting_solver(V:Variable_manager.VM) = struct
   (* Express the constraints needed for this subdivision to be consistent with the rest of the subdivision *)
   (* The first string argument is the prefix of the variable, for instance if one wants a constraints for every interval
    * the second one is the number of indices. *)
-  let rec constraints_subdiv: array_ctx -> string -> string -> array_subdivision -> rel list = fun ctx prefix total a ->
+  let rec constraints_subdiv: array_ctx -> string -> string -> array_subdivision -> bool term list = fun ctx prefix total a ->
     let prefix = "a!" ^ prefix in
     let rec all_subdiv = function
       | Some s ->

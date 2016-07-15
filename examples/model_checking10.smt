@@ -16,7 +16,7 @@
 (declare-fun |s0.turn| () P1)
 (declare-fun |s1.turn| () P1)
 (declare-fun |s0.i| () P1)
-(assert (or (and (not (select |s0.want| |s0.i|)) (= |s1.want| (store |s0.want| |s0.i| true)) (= |s0.crit| |s1.crit|) (= |s0.turn| |s1.turn|)) (and (select |s0.want| |s0.i|) (not (select |s0.crit| |s0.i|)) (= |s0.turn| |s0.i|) (= |s1.crit| (store |s0.crit| |s0.i| true)) (= |s0.want| |s1.want|) (= |s0.turn| |s1.turn|)) (and (select |s0.crit| |s0.i|) (= |s1.want| (store |s0.want| |s0.i| false)) (= |s1.crit| (store |s0.crit| |s0.i| false)))))
+(assert (or (and (not (select |s0.want| |s0.i|)) (= (# (z P1) (or (and (= z |s0.i|) (select |s1.want| z)) (and (not (= z |s0.i|)) (= (select |s1.want| z) (select |s0.want| z))))) N_P1) (= |s0.crit| |s1.crit|) (= |s0.turn| |s1.turn|)) (and (select |s0.want| |s0.i|) (not (select |s0.crit| |s0.i|)) (= |s0.turn| |s0.i|) (= |s1.crit| (store |s0.crit| |s0.i| true)) (= |s0.want| |s1.want|) (= |s0.turn| |s1.turn|)) (and (select |s0.crit| |s0.i|) (= |s1.want| (store |s0.want| |s0.i| false)) (= |s1.crit| (store |s0.crit| |s0.i| false)))))
 (push 1)
 (declare-fun |s1.i| () P1)
 (assert (not (forall ((|var!!0| P1)) (or (not (and (select |s1.crit| |s1.i|) (select |s1.crit| |var!!0|))) (= |s1.i| |var!!0|)))))
