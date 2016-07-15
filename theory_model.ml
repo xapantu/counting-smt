@@ -294,6 +294,15 @@ module LA_SMT = struct
       assert_equality (fun a -> Int_equality a) a
     | Bool_equality(a) ->
       assert_equality (fun a -> Bool_equality a) a
+    | Bool(a) ->
+      if a = BValue true then true
+      else
+        let a_val = get_val_from_model model a in
+        if a_val then
+          interval_manager#assume (Bool(a))
+        else
+          interval_manager#assume(Bool(not_term a));
+        a_val
     | Greater(a, b) ->
       if a = b then true
       else
@@ -392,26 +401,14 @@ module LA_SMT = struct
       [(Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (1, [0])), (Ninf, Pinf)]
     | Bool_equality(Equality(a, Array_access(tab, index, neg))) ->
       make_domain_from_expr var_name premodel (Bool_equality(Equality(Array_access(tab, index, neg), a)))
-    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) ->
+    | Bool(Array_access(tab, index, neg)) ->
+      (assert (index = IVar(var_name, 0));
+       [(Arrays.equality_array actx tab neg array_init, (1, [0])), (Ninf, Pinf)])
+    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) | Bool(_) ->
       if oracle_rel e then
         [auxiliary_constraints, (Ninf, Pinf)]
       else
         []
-    | Bool(Array_access(tab, index, neg)) ->
-      (assert (index = IVar(var_name, 0));
-       [(Arrays.equality_array actx tab neg array_init, (1, [0])), (Ninf, Pinf)])
-    | Bool(a) ->
-      let a_val = get_val_from_model model a in
-      if a_val then
-        begin
-          assum#assume (Bool(a));
-          [auxiliary_constraints, (Ninf, Pinf)]
-        end
-      else
-        begin
-          assum#assume (Bool(not_term a));
-          []
-        end
 
   let replace_arrays ctx = 
     let rec aux = function
