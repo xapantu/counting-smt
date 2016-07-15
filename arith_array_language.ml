@@ -26,16 +26,22 @@ type concrete_value =
 
 type _ equality =
   | AEquality : 'a array term * 'a array term -> 'a array equality
+  | NoEquality : 'a term * 'a term -> 'a equality
   | ExtEquality : 'a array term * 'a array term -> 'a array equality
+  | Equality : 'a term * 'a term -> 'a equality
 
 
 type rel =
   | Mod of int term * int * int
   | Greater of int term * int term
-  | IEquality of int term * int term
-  | BEquality of bool term * bool term
   | Bool of bool term
   | Array_bool_equality of bool array equality
+  | Int_equality of int equality
+  | Bool_equality of bool equality
+
+let int_equality a b = Int_equality(Equality(a, b))
+
+let bool_equality a b = Bool_equality(Equality(a, b))
 
 type bound =
   | Ninf
@@ -109,12 +115,17 @@ let rec term_to_uid : type a. a term -> string = function
 let rec rel_to_smt = function
   | Greater(e1, e2) ->
     Format.sprintf "(>= %s %s)" (term_to_string e1) (term_to_string e2)
-  | IEquality(e1, e2) ->
-    Format.sprintf "(= %s %s)" (term_to_string e1) (term_to_string e2)
-  | BEquality(e1, e2) ->
-    Format.sprintf "(= %s %s)" (term_to_string e1) (term_to_string e2)
+  | Int_equality(a) ->
+    eq_to_smt a
+  | Bool_equality(a) ->
+    eq_to_smt a
   | Bool(b) ->
     term_to_string b
+and eq_to_smt: type a. a equality -> string = function
+  | Equality(e1, e2) ->
+    Format.sprintf "(= %s %s)" (term_to_string e1) (term_to_string e2)
+  | NoEquality(e1, e2) ->
+    Format.sprintf "(not %s)" (eq_to_smt (Equality(e1, e2)))
 
 let rec arith_expr_to_string = function
   | ATerm e -> term_to_string e

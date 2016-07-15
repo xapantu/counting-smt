@@ -146,9 +146,9 @@ let rec lisp_to_expr ?z:(z="") ctx l =
       begin
         match s with
         | Int | Range(_, _) ->
-          Theory_expr (IEquality (lisp_to_int_texpr ~z ctx a, lisp_to_int_texpr ~z ctx b))
+          Theory_expr (int_equality (lisp_to_int_texpr ~z ctx a) (lisp_to_int_texpr ~z ctx b))
         | Bool ->
-          Theory_expr (BEquality (lisp_to_bool ~z ctx a, lisp_to_bool ~z ctx b))
+          Theory_expr (bool_equality (lisp_to_bool ~z ctx a) (lisp_to_bool ~z ctx b))
         | _ -> assert(false)
       end
     | Lisp_true | Lisp_false | Lisp_string _ ->

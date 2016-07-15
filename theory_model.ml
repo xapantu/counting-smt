@@ -3,6 +3,8 @@ open Options
 open Formula
 
 let very_verbose = false
+(* border line features that could create bugs (but should not) *)
+let super_fast = true
 
 (* This theory uses an external solver to solve basic arithmetic
  * and real stuff, and then sends new constraints to the solver for
@@ -264,7 +266,45 @@ module LA_SMT = struct
     | Array_access(Array_term(a, _), _, _) ->
       failwith (Format.sprintf "trying to get an array value from a model - should not happen: %s@." a)
     | Array_term(_) ->  failwith "trying to get an array value from a model - should not happen"
+    | _ -> assert false
 
+  let oracle_rel interval_manager model r =
+    let rec assert_equality: type a. (a equality -> rel) -> a equality -> bool = fun f eq ->
+      match eq with
+      | Equality(a, b) ->
+        if a = b then true
+        else
+          let a_val = get_val_from_model model a and
+          b_val = get_val_from_model model b in
+          if a_val = b_val then
+            interval_manager#assume (f (Equality(a, b)))
+          else
+            interval_manager#assume (f (NoEquality(a, b)));
+          a_val = b_val
+      | NoEquality(a, b) ->
+        not (assert_equality f (Equality(a, b)))
+    in
+    match r with
+    | Array_bool_equality(_) ->
+      let bool_var = BVar ((Hashtbl.find !Variable_manager.rels r).name, true) in
+      let b = get_val_from_model model bool_var in
+      interval_manager#assume (bool_equality bool_var (BValue b));
+      b
+    | Int_equality(a) ->
+      assert_equality (fun a -> Int_equality a) a
+    | Bool_equality(a) ->
+      assert_equality (fun a -> Bool_equality a) a
+    | Greater(a, b) ->
+      if a = b then true
+      else
+        let a_val = get_val_from_model model a and
+        b_val = get_val_from_model model b in
+        if a_val >= b_val then
+          interval_manager#assume (Greater(a, b))
+        else
+          interval_manager#assume (Greater(plus_one b, a));
+        a_val = b_val
+    | _ -> assert false
 
   let ensure_domains_consistency premodel (all_domains:domain list) =
     let interval_manager = premodel.interval_manager in
@@ -328,60 +368,21 @@ module LA_SMT = struct
     let model = premodel.model in
     let actx = premodel.array_ctx in
     let assum = premodel.interval_manager in
-    let oracle a b =
-      compare (get_val_from_model model a) (get_val_from_model model b)
-    in
+    let oracle_rel = oracle_rel assum model in
     let array_init = Arrays.mk_full_subdiv actx (Ninf, Pinf) in
     let auxiliary_constraints = array_init, (1, [0]) in
     match e with
     | Greater(IVar(v, n), a) when v = var_name -> [auxiliary_constraints, (Expr (minus n a), Pinf)]
     | Greater(a, IVar(v, n)) when v = var_name -> [auxiliary_constraints, (Ninf, Expr(minus (n-1) a))]
-    | IEquality(a, IVar(v, n)) when v = var_name -> [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
-    | IEquality(IVar(v, n), a) when v = var_name -> [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
-    | Greater(a, b) ->
-      if a = b then
-        [auxiliary_constraints, (Ninf, Pinf)]
-      else
-        let a_val = get_val_from_model model a and
-        b_val = get_val_from_model model b in
-        if a_val >= b_val then
-          begin
-            assum#assume_oracle oracle (Greater(a, b));
-            [auxiliary_constraints, (Ninf, Pinf)]
-          end
-        else
-          begin
-            assum#assume_oracle oracle (Greater(b, plus_one b));
-            []
-          end
-    | IEquality(a, b) ->
-      if a = b then
-        [auxiliary_constraints, (Ninf, Pinf)]
-      else
-        let a_val = get_val_from_model model a and
-        b_val = get_val_from_model model b in
-        if a_val = b_val then
-          begin
-            assum#assume_oracle oracle (IEquality(a, b));
-            [auxiliary_constraints, (Ninf, Pinf)]
-          end
-        else if a_val > b_val then
-          begin
-            assum#assume_oracle oracle (Greater(a, plus_one b));
-            []
-          end
-        else
-          begin
-            assum#assume_oracle oracle (Greater(b, plus_one a));
-            []
-          end
-    | BEquality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2)) ->
+    | Int_equality(Equality(a, IVar(v, n))) when v = var_name -> [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
+    | Int_equality(Equality(IVar(v, n), a)) when v = var_name -> [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
+    | Bool_equality(Equality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2))) ->
       if index1 <> IVar(var_name, 0) then
         failwith (Format.sprintf "incorrect index %s" (term_to_string index1));
       if index2 <> IVar(var_name, 0) then
         failwith (Format.sprintf "incorrect index %s" (term_to_string index2));
       [(Arrays.equality_arrays actx tab1 tab2 (not @@ xor neg1 neg2) array_init, (1, [0])), (Ninf, Pinf)]
-    | BEquality(Array_access(tab, index, neg), a) ->
+    | Bool_equality(Equality(Array_access(tab, index, neg), a)) ->
       assert (index = IVar(var_name, 0)); 
       let a_val = get_val_from_model model a in
       if a_val then
@@ -389,21 +390,13 @@ module LA_SMT = struct
       else
         assum#assume(Bool(not_term a));
       [(Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (1, [0])), (Ninf, Pinf)]
-    | BEquality(a, Array_access(tab, index, neg)) ->
-      make_domain_from_expr var_name premodel (BEquality(Array_access(tab, index, neg), a))
-    | BEquality(a, b) ->
-      let a_val = get_val_from_model model a and
-      b_val = get_val_from_model model b in
-      if a_val = b_val then
-        begin
-          assum#assume (BEquality(a, b));
-          [auxiliary_constraints, (Ninf, Pinf)]
-        end
+    | Bool_equality(Equality(a, Array_access(tab, index, neg))) ->
+      make_domain_from_expr var_name premodel (Bool_equality(Equality(Array_access(tab, index, neg), a)))
+    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) ->
+      if oracle_rel e then
+        [auxiliary_constraints, (Ninf, Pinf)]
       else
-        begin
-          assum#assume (BEquality(not_term a, b));
-           []
-        end
+        []
     | Bool(Array_access(tab, index, neg)) ->
       (assert (index = IVar(var_name, 0));
        [(Arrays.equality_array actx tab neg array_init, (1, [0])), (Ninf, Pinf)])
@@ -422,17 +415,17 @@ module LA_SMT = struct
 
   let replace_arrays ctx = 
     let rec aux = function
-      | BEquality(Array_access(a, b, c), Array_access(d, e, f)) ->
+      | Bool_equality(Equality(Array_access(a, b, c), Array_access(d, e, f))) ->
         let a = Array_solver.get_array_at ctx.array_solver a b c in
         let b = Array_solver.get_array_at ctx.array_solver d e f in
-        BEquality(a, b)
-      | BEquality(Array_access(a, b, c), d) ->
+        Bool_equality(Equality(a, b))
+      | Bool_equality(Equality(Array_access(a, b, c), d)) ->
         let a = Array_solver.get_array_at ctx.array_solver a b c in
-        BEquality(a, d)
-      | BEquality(a, Array_access(d, e, f)) ->
+        bool_equality a d
+      | Bool_equality(Equality(a, Array_access(d, e, f))) ->
         let b = Array_solver.get_array_at ctx.array_solver d e f in
-        BEquality(a, b)
-      | BEquality(a, b) -> BEquality(a, b)
+        bool_equality a b
+      | Bool_equality(Equality(a, b)) -> Bool_equality(Equality(a, b))
       | Bool(Array_access(a, b, c)) ->
         let a = Array_solver.get_array_at ctx.array_solver a b c in
         Bool(a)
@@ -460,11 +453,17 @@ module LA_SMT = struct
       expr_to_domain_aux premodel cardinality.expr
   
   let ensure_domain_fun premodel create_constraint construct domain =
-    let p = { premodel with interval_manager = new Interval_manager.interval_manager } in
-    List.iter p.interval_manager#assume p.basic_assumptions;
-    let domain = build_domain_for_construct p construct in
     let interval_manager = premodel.interval_manager in
-    let smt_assumptions = assumptions_to_expr p.interval_manager#assumptions |> expr_to_smt in
+    let domain, assumptions =
+      if super_fast then
+        let p = { premodel with interval_manager = new Interval_manager.interval_manager } in
+        List.iter p.interval_manager#assume p.basic_assumptions;
+        let domain = build_domain_for_construct p construct in
+        domain, p.interval_manager#assumptions
+      else
+        domain, interval_manager#assumptions
+    in
+    let smt_assumptions = assumptions_to_expr assumptions |> expr_to_smt in
     begin
       try
         domain
@@ -495,7 +494,7 @@ module LA_SMT = struct
 
   let ensure_domain premodel cardinality_variable construct domain =
     ensure_domain_fun premodel (fun res ->
-            expr_to_smt (Theory_expr(IEquality(IVar(cardinality_variable, 0), IVar(res, 0))))
+            expr_to_smt (Theory_expr(int_equality (IVar(cardinality_variable, 0)) (IVar(res, 0))))
           ) construct domain
   
 
@@ -516,15 +515,7 @@ module LA_SMT = struct
     if is_sat () then
       let model = get_model () in
       let interval_manager = new_interval_manager () in
-      let array_oracle r =
-        match r with
-        | Array_bool_equality(_) ->
-          let bool_var = BVar ((Hashtbl.find !Variable_manager.rels r).name, true) in
-          let b = get_val_from_model model bool_var in
-          interval_manager#assume (BEquality (bool_var, BValue b));
-          b
-        | _ -> assert false
-      in
+      let array_oracle = oracle_rel interval_manager model in
       let array_solver, disequalities =
         let all_equalities = Hashtbl.fold (fun rel var l ->
             match rel with
@@ -543,7 +534,7 @@ module LA_SMT = struct
             | _ -> failwith "hum, this is not an array !?"
           in
           let expr = Variable_manager.use_quantified_var "z" quantified_sort (fun constr ->
-              And(constr, Theory_expr(BEquality(Array_access(a, IVar("z", 0), true), Array_access(b, IVar("z", 0), true))))
+              And(constr, Theory_expr(bool_equality (Array_access(a, IVar("z", 0), true)) (Array_access(b, IVar("z", 0), true))))
             )
           in
           let construct =  { quantified_var = "z"; expr; quantified_sort;} in

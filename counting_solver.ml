@@ -150,8 +150,10 @@ module Counting_solver(V:Variable_manager.VM) = struct
    * it is assumed that the array term is equal to the boolean *)
   let equality_array: array_ctx -> bool array term -> bool -> array_subdivision -> array_subdivision =
     fun ctx t value sub ->
-      let Array_term(name, TBool) = t in
-      assume ctx name value sub
+      match t with
+      | Array_term(name, TBool) ->
+        assume ctx name value sub
+      | _ -> failwith "no store here!"
 
   (* Express the constraints needed for this subdivision to be consistent with the rest of the subdivision *)
   (* The first string argument is the prefix of the variable, for instance if one wants a constraints for every interval
@@ -167,12 +169,12 @@ module Counting_solver(V:Variable_manager.VM) = struct
         let left_cond = if s.left_tree = None then
             []
          else
-           IEquality (IVar(prefix ^ s.var_left, 0), IVar(unwrap var_left, 0)) :: left_constraint
+           int_equality (IVar(prefix ^ s.var_left, 0)) (IVar(unwrap var_left, 0)) :: left_constraint
         in
         let right_cond = if s.right_tree = None then
             []
          else
-           IEquality (IVar(prefix ^ s.var_right,0), IVar(unwrap var_right, 0)) :: right_constraint
+           int_equality (IVar(prefix ^ s.var_right,0)) (IVar(unwrap var_right, 0)) :: right_constraint
         in
         left_cond @ right_cond,
         Some (Format.sprintf "(+ %s%s %s%s)" prefix s.var_left prefix s.var_right)
@@ -180,7 +182,7 @@ module Counting_solver(V:Variable_manager.VM) = struct
     in
     let constraints_total_sum, additional = all_subdiv a in
     let constraints_total_sum = if additional = None then constraints_total_sum else
-        IEquality(IVar(total, 0), IVar(unwrap additional, 0)) :: constraints_total_sum
+        int_equality (IVar(total, 0)) (IVar(unwrap additional, 0)) :: constraints_total_sum
     in
     constraints_total_sum
 
@@ -300,25 +302,26 @@ module Counting_solver(V:Variable_manager.VM) = struct
    * the subdivision s *)
   let equality_arrays: array_ctx -> bool array term -> bool array term -> bool -> array_subdivision -> array_subdivision =
     fun ctx t1 t2 value sub ->
-    let Array_term(name1, TBool) = t1
-    and Array_term(name2, TBool) = t2 in
-    (* split the cases, for instance if value = true, t1 = true = t2, and then t1 = false = t2 *)
-    let mysub =
-      array_subdivision_duplicate sub
-      |> assume ctx name1 true
-      |> assume ctx name2 value
-    in
-    let mysub2 =
-      reset_subdivision mysub
-      |> array_subdivision_intersection ctx sub
-      |> assume ctx name1 false
-      |> assume ctx name2 (not value)
-    in
-    (* a \/ b = not (not a /\ not b) *)
-    array_subdivision_negation ctx
-      (array_subdivision_intersection ctx
-         (array_subdivision_negation ctx mysub)
-         (array_subdivision_negation ctx mysub2))
+      match t1, t2 with
+      | Array_term(name1, TBool), Array_term(name2, TBool) ->
+        (* split the cases, for instance if value = true, t1 = true = t2, and then t1 = false = t2 *)
+        let mysub =
+          array_subdivision_duplicate sub
+          |> assume ctx name1 true
+          |> assume ctx name2 value
+        in
+        let mysub2 =
+          reset_subdivision mysub
+          |> array_subdivision_intersection ctx sub
+          |> assume ctx name1 false
+          |> assume ctx name2 (not value)
+        in
+        (* a \/ b = not (not a /\ not b) *)
+        array_subdivision_negation ctx
+          (array_subdivision_intersection ctx
+             (array_subdivision_negation ctx mysub)
+             (array_subdivision_negation ctx mysub2))
+      | _ -> failwith "no store here"
 
   (* Plain new subdivision, with no assumptions *)
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun a b ->

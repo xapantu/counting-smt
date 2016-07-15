@@ -23,16 +23,16 @@ class interval_manager = object(this)
     let must_be_added =
       not(List.mem a assumptions) &&
       match a with
-      | IEquality(a, b) -> (not (List.mem (IEquality(b, a)) assumptions)) &&  a <> b
+      | Int_equality(Equality(a, b)) -> (not (List.mem (int_equality b a) assumptions)) &&  a <> b
       | Greater(a, b) ->
-        if List.mem(IEquality(a, b)) assumptions then
+        if List.mem(int_equality a b) assumptions then
           false
-        else if List.mem(IEquality(b, a)) assumptions then
+        else if List.mem(int_equality b a) assumptions then
           false
         else if List.mem (Greater(b, a)) assumptions then
           begin
             assumptions <- List.filter ((<>) (Greater(b, a))) assumptions;
-            assumptions <- IEquality(a, b) :: assumptions;
+            assumptions <- int_equality a b :: assumptions;
             false
           end
         else
@@ -80,7 +80,7 @@ class interval_manager = object(this)
   method merge_ordering =
     (* now merge every equal terms into a single class *)
     List.iter (function
-        | IEquality(a, b) ->
+        | Int_equality(Equality(a, b)) ->
           (* needs a good union_find structure *)
           let class_a = List.find (List.mem a) ordering in
           let class_b = List.find (List.mem b) ordering in
@@ -99,7 +99,7 @@ class interval_manager = object(this)
   method fix_ordering oracle =
     assert (List.fold_left (fun l a -> l && List.length a = 1) true ordering);
     List.iter (function
-        | Greater(a, b) | IEquality(a, b) -> this#order oracle a; this#order oracle b
+        | Greater(a, b) | Int_equality(Equality(a, b)) -> this#order oracle a; this#order oracle b
         | _ -> ()) assumptions;
     assert (List.fold_left (fun l a -> l && List.length a = 1) true ordering);
     List.iter (function
@@ -135,7 +135,7 @@ class interval_manager = object(this)
           if c > 0 then
             this#assume (Greater(a, b))
           else if c = 0 then
-            this#assume (IEquality(a, b))
+            this#assume (int_equality a b)
           else
             assert false
     in
@@ -182,8 +182,8 @@ class interval_manager = object(this)
   
   method assume_oracle oracle a =
     (match a with
-    | Greater (a, b) -> this#order oracle a; this#order oracle b;
-    | IEquality(a, b) -> this#order oracle a; this#order oracle b;
+    | Greater (a, b)
+    | Int_equality(Equality(a, b)) -> this#order oracle a; this#order oracle b;
     | _ -> (););
     this#assume a
 
@@ -260,7 +260,7 @@ class interval_manager = object(this)
           if c > 0 then
             this#assume (Greater (a, b))
           else if c = 0 then
-            this#assume (IEquality (a, b))
+            this#assume (int_equality a b)
           else
             assert false
 
