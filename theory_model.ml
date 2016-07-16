@@ -362,7 +362,7 @@ module LA_SMT = struct
   let domain_neg premodel d =
     let c = premodel.array_ctx in
     let i = premodel.interval_manager in
-    i#complementary_domain d
+    i#complementary_domain d (oracle_rel i premodel.model) 
       (fun (arrays1, congruence1) ->
         Arrays.array_subdivision_negation c arrays1, congruence1)
       (fun i ->
@@ -409,7 +409,8 @@ module LA_SMT = struct
       let domain_cond = make_domain_from_expr var_name premodel r in
       let fst_domain = make_domain_intersection premodel domain_cond (make_domain_from_expr var_name premodel a) in
       let snd_domain =  make_domain_intersection premodel (domain_neg premodel domain_cond) (make_domain_from_expr var_name premodel b) in
-      make_domain_union premodel fst_domain snd_domain
+      let d = make_domain_union premodel fst_domain snd_domain in
+      d
     | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) | BVar(_) | BValue(_)->
       if oracle_rel e then
         [auxiliary_constraints, (Ninf, Pinf)]

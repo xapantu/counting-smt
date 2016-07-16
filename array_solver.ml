@@ -38,17 +38,25 @@ module Array_solver(S: sig
     let repr_a, class_a = Hashtbl.find ctx a in
     let repr_b, class_b = Hashtbl.find ctx b in
     let class_total = StrSet.union class_a class_b in
-    let c = StrSet.filter (function
+    let store, others = StrSet.partition (function
         | Array_store(_) -> true
-        | _ -> false) class_total |> StrSet.cardinal
-    in
-    if c > 1 then
-      false
-    else
+        | _ -> false) class_total in
+    let c = StrSet.cardinal store in
+    if c = 0 then
       let fusion = repr_a, class_total in
       let () = StrSet.iter (fun a ->
           Hashtbl.add ctx a fusion) class_total in
       true
+    else if c = 1 then
+      match StrSet.choose store with
+      | (Array_store(a, _, _)) as e ->
+        if StrSet.mem a others then false
+        else
+          let fusion = e, class_total in
+          let () = StrSet.iter (fun a ->
+              Hashtbl.add ctx a fusion) class_total in
+          true
+    else false
 
   let ensure_distinct_class ctx a b =
     ensure_class ctx a;
@@ -74,16 +82,16 @@ module Array_solver(S: sig
           if oracle (S.equality_to_rel eq) then
             ignore (merge_class context (Array_term(a, sa)) (Array_term(b, sb)));
           disequalities
-        | ExtEquality(Array_term(a, sa), Array_term(b, sb)) ->
+        | ExtEquality(a, b) ->
           if oracle (S.equality_to_rel eq) then
-            if merge_class context (Array_term(a, sa)) (Array_term(b, sb)) then
+            if merge_class context a b then
               disequalities
             else
-              (Array_term(a, sa), Array_term(b, sb), true) :: disequalities
+              (a, b, true) :: disequalities
           else
             begin
-              if ensure_distinct_class context (Array_term(a, sa)) (Array_term(b, sb)) then
-                (Array_term(a, sa), Array_term(b, sb), false) :: disequalities
+              if ensure_distinct_class context a b  then
+                (a, b, false) :: disequalities
               else
                 raise Unsat
             end

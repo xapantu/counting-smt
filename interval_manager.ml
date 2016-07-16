@@ -186,7 +186,7 @@ class interval_manager = object(this)
     | _ -> (););
     this#assume a
 
-  method complementary_domain dom (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
+  method complementary_domain dom oracle (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
     let rec domain_neg_aux old_bound dom =
       match dom with
         | (_, interv) :: q ->
@@ -217,6 +217,15 @@ class interval_manager = object(this)
     in
     if dom = [] then dneg
     else
+      let equal a b =
+        match a, b with
+        | Expr a, Expr b ->
+          if oracle (Int_equality (Equality(a, b))) then
+            (this#assume
+               (Int_equality (Equality(a, b))); true)
+          else false
+        | _ -> false
+      in
       let rec one_on_one l1 = function
         | t :: q -> t :: (one_on_one q l1)
         | [] -> l1 in
@@ -232,6 +241,11 @@ class interval_manager = object(this)
         | _ -> one_on_one dom dneg)
         |> List.filter (fun l -> l <> None)
         |> List.map unwrap
+        |> List.filter (fun (a, (l, u)) ->
+            if equal l u then
+               false
+            else true
+            )
       in
       fin
 
@@ -261,12 +275,14 @@ class interval_manager = object(this)
           else if c = 0 then
             this#assume (int_equality a b)
           else
-            assert false
+            (Format.eprintf "%s %s@." (term_to_string a) (term_to_string b);
+            assert false)
 
     in
     let rec extract_inter = function
       | [] -> []
       | (arrays, (l, u))::q ->
+        assert (greater u l >= 0);
         let intersect_arrays = intersect_constraints arr arrays in
         (* the first two case mean that there is no intersection *)
         if greater l u1 > 0 then
@@ -289,7 +305,10 @@ class interval_manager = object(this)
                 (assume_greater u1 u; u)
             in
             assume_greater bound_sup bound_inf;
-            (intersect_arrays, (bound_inf, bound_sup)) :: extract_inter q
+            if greater bound_sup bound_inf = 0 then
+              extract_inter q
+            else
+              (intersect_arrays, (bound_inf, bound_sup)) :: extract_inter q
           end
     in
     extract_inter d2
