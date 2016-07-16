@@ -313,7 +313,7 @@ module LA_SMT = struct
           interval_manager#assume (Greater(a, b))
         else
           interval_manager#assume (Greater(plus_one b, a));
-        a_val = b_val
+        a_val >= b_val
     | _ -> assert false
 
   let ensure_domains_consistency premodel (all_domains:domain list) =

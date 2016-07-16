@@ -186,6 +186,15 @@ class interval_manager = object(this)
     | _ -> (););
     this#assume a
 
+  method check_ordered oracle (dom:constrained_domain) = 
+    let greater a b = match a, b with
+      | Expr a, Expr b ->
+          assert (oracle (Greater(b, a)))
+      | _ -> ()
+    in
+    ignore (List.fold_left (fun up (_, (l, u)) ->
+        greater l u; greater up l; u) Ninf dom)
+
   method complementary_domain dom oracle (negate_constraints:constraints -> constraints) empty_constraints is_full_constraints =
     let rec domain_neg_aux old_bound dom =
       match dom with
@@ -194,15 +203,9 @@ class interval_manager = object(this)
             match interv with
               | (Ninf, Expr a) -> domain_neg_aux (Expr  a) q
               | (Expr a, Pinf) ->
-                if Expr a = old_bound then
-                  []
-                else
                   let interv = (old_bound, Expr a) in
                   [empty_constraints interv, interv]
               | (Expr a, Expr b) ->
-                if Expr a = old_bound then
-                  domain_neg_aux (Expr b) q
-                else
                   let interv = (old_bound, Expr a) in
                   (empty_constraints interv, interv) :: domain_neg_aux (Expr b) q
               | (Pinf, _) | (_, Ninf) -> raise Bad_interval
@@ -213,8 +216,7 @@ class interval_manager = object(this)
           let interv = (old_bound, Pinf) in
           [empty_constraints interv, interv]
     in
-    let dneg = domain_neg_aux Ninf dom
-    in
+    let dneg = domain_neg_aux Ninf dom in
     if dom = [] then dneg
     else
       let equal a b =
@@ -242,9 +244,7 @@ class interval_manager = object(this)
         |> List.filter (fun l -> l <> None)
         |> List.map unwrap
         |> List.filter (fun (a, (l, u)) ->
-            if equal l u then
-               false
-            else true
+            not (equal l u)
             )
       in
       fin
@@ -282,7 +282,6 @@ class interval_manager = object(this)
     let rec extract_inter = function
       | [] -> []
       | (arrays, (l, u))::q ->
-        assert (greater u l >= 0);
         let intersect_arrays = intersect_constraints arr arrays in
         (* the first two case mean that there is no intersection *)
         if greater l u1 > 0 then
