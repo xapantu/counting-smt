@@ -39,6 +39,8 @@ module Lisp_typechecking(V:Variable_manager.VM) = struct
       Bool
     | Lisp_rec (Lisp_string "store" :: a :: b) ->
       infer a
+    | Lisp_rec (Lisp_string "const-array" :: a :: []) ->
+      Array(Int, infer a)
     | l -> failwith ("couldn't infer type for " ^ (lisp_to_string l))
 
 
@@ -49,7 +51,12 @@ module Lisp_typechecking(V:Variable_manager.VM) = struct
     | Lisp_string "Bool" -> Bool
     | Lisp_string "Real" -> Real
     | Lisp_rec(Lisp_string "Array" :: Lisp_string x :: Lisp_string "Bool" :: []) ->
-      Array(V.get_range x, Bool)
+      begin
+        try
+          Array(V.get_range x, Bool)
+        with
+        | Not_found -> failwith (Format.sprintf "Unknown range type %s" x)
+      end
     | (Lisp_string a) as e ->
       begin
         try
