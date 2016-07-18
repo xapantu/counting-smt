@@ -216,24 +216,36 @@ let rec extract_cards ?z:(z="") l =
         | Array(_, Bool) -> Bool
         | _ -> failwith "too complex array"
       in
-      let y = fresh_var ~sort:element_sort () in
-      let card_var = fresh_var () in
       let ctx = ref @@ defs_a @ defs_b in
-      let formula = Variable_manager.use_quantified_var "z" Int (fun a ->
-          let f =
-            Format.sprintf "(and (= z %s) (= %s (select %s z)))"
-              (lisp_to_string b_extracted)
-              y
-              (lisp_to_string a_extracted)
-            |> load_lisp_from_string
-            |> lisp_to_expr ctx
-          in
-          And(a, f) 
-        )
+      let a_array = lisp_to_array ctx a_extracted in
+      let b_term = lisp_to_int_texpr ~z:"" ctx b_extracted in
+      let rel = Array_access(a_array, b_term, true) in
+      let y =
+        if not (Variable_manager.has_rel rel) then
+          begin
+            let card_var = fresh_var () in
+            let y = Variable_manager.use_var_for_rel rel in
+            let formula = Variable_manager.use_quantified_var "z" Int (fun a ->
+                let f =
+                  Format.sprintf "(and (= z %s) (= %s (select %s z)))"
+                    (lisp_to_string b_extracted)
+                    y.name
+                    (lisp_to_string a_extracted)
+                  |> load_lisp_from_string
+                  |> lisp_to_expr ctx
+                in
+                And(a, f) 
+              )
+            in
+            ctx :=
+              Def (Lisp_rec [Lisp_string "="; Lisp_string card_var; Lisp_string "1"]) ::
+              Card { var_name = card_var; construct = { expr = formula; quantified_var = "z"; quantified_sort = Int; } } ::
+              !ctx;y
+          end
+        else
+          Variable_manager.use_var_for_rel rel
       in
-      Lisp_string y,
-      Def (Lisp_rec [Lisp_string "="; Lisp_string card_var; Lisp_string "1"]) ::
-      Card { var_name = card_var; construct = { expr = formula; quantified_var = "z"; quantified_sort = Int; } } ::
+      Lisp_string y.name,
       !ctx
     (*| Lisp_rec (Lisp_string "store" :: a :: b :: c :: []) when b <> Lisp_string z ->
       let a_extracted, defs_a = extract_cards a in

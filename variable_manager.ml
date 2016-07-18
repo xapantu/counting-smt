@@ -40,6 +40,9 @@ module Variable_manager (Formula:sig
     Hashtbl.add !vars v.name v;
     React.event new_variables v
 
+  let has_rel rel =
+    Hashtbl.mem !rels rel
+
   let use_var_for_rel (rel:bool term) =
     try
       Hashtbl.find !rels rel

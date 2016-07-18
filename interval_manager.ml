@@ -145,7 +145,7 @@ class interval_manager = object(this)
   method ordering =
     ordering
 
-  method get_slices_of_ordering (a, b) =
+  method get_slices_of_ordering (l, u) =
     assert (List.fold_left (fun l a -> l && List.length a >= 1) true ordering);
     let open List in
     let rec find_aux a ind b = match b with
@@ -154,30 +154,44 @@ class interval_manager = object(this)
         if mem a t then ind
         else find_aux a (ind + 1) q
     in
-    let a, b =
-    ( match a with
-      | Ninf -> 0
-      | Expr a -> find_aux a 1 ordering
+    let (a, l), (b, u) =
+    ( match l with
+      | Ninf -> failwith "ninf"
+      | Expr a -> find_aux a 1 ordering, a
       | Pinf -> failwith "pinf" )
-  , ( match b with
-      | Pinf -> List.length ordering + 1
-      | Expr b -> find_aux b 1 ordering
+  , ( match u with
+      | Pinf -> failwith "pinf"
+      | Expr b -> find_aux b 1 ordering, b
       | Ninf -> raise Not_found )
     in
     (* sometimes terms are equal *)
     let a, b = min a b, max a b in
     let res = ref [] in
+    let assumptions = ref [] in
     for i = a to (b-1) do
       if i = 0 && List.length ordering = 0 then
-        res := "inf!inf" :: !res
+        (*res := "inf!inf" :: !res*) failwith "ninf"
       else if i = 0 then
-        res := ("inf!" ^ term_to_uid (hd @@ List.nth ordering i)) :: !res
+        (*res := ("inf!" ^ term_to_uid (hd @@ List.nth ordering i)) :: !res*) failwith "ninf"
       else if i = List.length ordering then
-        res := (term_to_uid (hd @@ List.nth ordering (i-1)) ^ "!inf") :: !res
+        (*res := (term_to_uid (hd @@ List.nth ordering (i-1)) ^ "!inf") :: !res*) failwith "pinf"
       else
-        res := (term_to_uid (hd @@ List.nth ordering (i-1)) ^ "!" ^ term_to_uid (hd @@ List.nth ordering i)) :: !res
+        res := (term_to_uid (hd @@ List.nth ordering (i-1)) ^ "!" ^ term_to_uid (hd @@ List.nth ordering i)) :: !res;
+      begin
+      if i = a then
+        let elt = nth ordering (i-1) |> hd in
+        if elt <> l then
+          assumptions := Int_equality(Equality(l, elt)) :: !assumptions;
+      end;
+      begin
+      if i = b-1 then
+        let elt = nth ordering i |> hd in
+        if elt <> u then
+          assumptions := Int_equality(Equality(u, elt)) :: !assumptions;
+      end;
+      assumptions := Greater(hd @@ nth ordering i, hd @@ nth ordering (i-1)) :: !assumptions;
     done;
-    !res
+    !res, !assumptions
   
   method assume_oracle oracle a =
     (match a with

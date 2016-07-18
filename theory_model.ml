@@ -197,6 +197,13 @@ module LA_SMT = struct
       begin
         try
           let model = List.map get_var l in
+          (*List.iter (fun (a, v) ->
+              match v with
+              | VBool c ->
+              if startswith a.name "rel!" || startswith a.name "card!" then
+                Format.eprintf "%s: %s " a.name (if c then "true" else "fals")
+              | VInt _ -> () ) model;
+          Format.eprintf "@.";*)
           assert (List.length (!fetched_variables) = 0);
           model
         with
@@ -513,7 +520,7 @@ module LA_SMT = struct
       else
         domain, interval_manager#assumptions
     in
-    let smt_assumptions = assumptions_to_expr assumptions |> expr_to_smt in
+    let assumptions = ref assumptions in
     begin
       try
         domain
@@ -521,7 +528,11 @@ module LA_SMT = struct
             if Arrays.is_top sub then
               [interval_to_string interval]
             else
-              Arrays.array_sub_to_string premodel.array_ctx (interval_manager#get_slices_of_ordering interval) sub interval
+              begin
+                let slices, assump = interval_manager#get_slices_of_ordering interval in
+                assumptions := assump @ !assumptions;
+                Arrays.array_sub_to_string premodel.array_ctx slices sub interval
+              end
           )
         |> List.concat
         |> List.filter ((<>) "0")
@@ -534,10 +545,11 @@ module LA_SMT = struct
               |> Format.sprintf "(+ %s)")
         |> create_constraint
         |> Format.sprintf "(=> %s %s)"
-          smt_assumptions
+          (assumptions_to_expr !assumptions |> expr_to_smt)
       with
       | Unbounded_interval ->
-        Format.sprintf "(=> %s false)" smt_assumptions
+        Format.sprintf "(=> %s false)"
+          (assumptions_to_expr !assumptions |> expr_to_smt)
 
     end
     |> assert_formula_str
@@ -570,7 +582,7 @@ module LA_SMT = struct
         let all_equalities = Hashtbl.fold (fun rel var l ->
             match rel with
             | Array_bool_equality(a) -> a :: l
-            | _ -> assert false) !Variable_manager.rels []
+            | _ -> l) !Variable_manager.rels []
         in
         Array_solver.context_from_equality all_equalities array_oracle
       in
