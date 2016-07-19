@@ -5,6 +5,7 @@ module type VM = sig
   val get_range: string -> sort
   val find_all: (var -> bool) -> var list
   val new_variables: var React.event
+  val fold_rels: (bool term -> var -> 'c -> 'c) -> 'c -> 'c
 end
 
 module Variable_manager (Formula:sig
@@ -25,6 +26,9 @@ module Variable_manager (Formula:sig
   let get_range = Hashtbl.find range
 
   let new_variables = React.new_event ()
+
+  let fold_rels f c =
+    Hashtbl.fold f !rels c
 
   let find a =
     Hashtbl.find !vars a

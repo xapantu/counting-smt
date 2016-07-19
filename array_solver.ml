@@ -4,14 +4,21 @@ open Lisp
 
 module Array_solver(S: sig
     module V:Variable_manager.VM
+    module F: Formula.F with type texpr = bool Arith_array_language.term
     type a
     val equality_to_rel: a array equality -> bool term
   end) = struct
   
   type a = S.a
+  open S.F
 
   module StrSet = Set.Make (struct type t = a array term
       let compare = compare end)
+
+  module ImpliSet = Set.Make (struct
+      type t = bool array term * bool array term * int term * int term
+      let compare = compare
+    end)
 
   exception Unsat
 
@@ -21,6 +28,8 @@ module Array_solver(S: sig
         | _ -> ()
 
   type context = (a array term, a array term * StrSet.t) Hashtbl.t
+
+  let implies = ref ImpliSet.empty
 
   let ensure_class (ctx:context) a =
     if not (Hashtbl.mem ctx a) then
@@ -103,6 +112,38 @@ module Array_solver(S: sig
         | Bool_equality(Array_access(a, i, neg), c) ->
           let a = get_array_at 
         | a -> (Format.eprintf "equality not handled@."; a :: disequalities)*)
+
+
+  (* Just a little help for the solver *)
+  let save_implications () =
+    let eqs, access = S.V.fold_rels (fun rel var (eqs, access) ->
+        match rel with
+        | Array_bool_equality(AEquality(_)) | Array_bool_equality(ExtEquality(_)) -> (rel, var)::eqs, access
+        | Array_access(_) -> eqs, (rel, var)::access
+        | _ -> eqs, access) ([], [])
+    in
+    List.map (function
+        | Array_bool_equality(AEquality(a, b)), eq_var | Array_bool_equality(ExtEquality(a, b)), eq_var ->
+          List.map (function
+              | Array_access(t, i1, true), term1 when a = t ->
+                List.fold_left (fun l access2 -> match access2 with
+                    | Array_access(t, i2, true), term2 when b = t ->
+                      if not (ImpliSet.mem (a, b, i1, i2) !implies) then
+                        (
+                          implies := ImpliSet.add (a, b, i1, i2) !implies;
+                          Or(Not(And(Theory_expr(BVar(eq_var.name, true)), Theory_expr(Int_equality(Equality(i1, i2))))), 
+                              Theory_expr(Bool_equality(Equality(BVar(term1.name, true), BVar(term2.name, true))))) :: l)
+                      else
+                        l
+                    | _ -> l) [] access
+              | _ -> []) access
+          |> List.concat
+        | _ -> assert false
+      ) eqs
+    |> List.concat
+
+
+
   
 
 end

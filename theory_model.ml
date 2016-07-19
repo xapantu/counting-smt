@@ -36,6 +36,7 @@ module LA_SMT = struct
       module V = Variable_manager
       type a = bool
       let equality_to_rel a = Array_bool_equality a
+          module F = Formula
     end)
 
 
@@ -226,11 +227,13 @@ module LA_SMT = struct
     last_assumptions := [];
     let old_v = Hashtbl.copy !Variable_manager.vars in
     let old_rels = Hashtbl.copy !Variable_manager.rels in
+    let implications = !Array_solver.implies in
     let open Arrays in
     let sub = array_subdivision_duplicate !a.hyps in
     f ();
     Variable_manager.vars := old_v;
     Variable_manager.rels := old_rels;
+    Array_solver.implies := implications;
     !a.hyps <- sub;
     send_to_solver "(pop 1)"
 

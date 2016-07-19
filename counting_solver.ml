@@ -50,6 +50,10 @@ module Counting_solver(V:Variable_manager.VM) = struct
         aux (prefix ^ a.var_right ^ "\t") a.right_tree
     in
     aux "" h
+
+  let rec tree_height = function
+    | None -> 0
+    | Some s -> 1 + (max (tree_height s.left_tree) (tree_height s.right_tree))
   
   let copy_ctx ctx =
     let rec cp = function
@@ -159,6 +163,7 @@ module Counting_solver(V:Variable_manager.VM) = struct
   (* The first string argument is the prefix of the variable, for instance if one wants a constraints for every interval
    * the second one is the number of indices. *)
   let rec constraints_subdiv: array_ctx -> string -> string -> array_subdivision -> bool term list = fun ctx prefix total a ->
+    (*Format.eprintf "%d@." (tree_height a);*)
     let prefix = "a!" ^ prefix in
     let rec all_subdiv = function
       | Some s ->

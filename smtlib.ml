@@ -354,6 +354,9 @@ let rec runner stdout lexing_stdin cards' =
                 Lisp_rec (Lisp_string "assert" :: Lisp_rec (Lisp_string "and" :: assertion_cardless :: new_vars) :: [])
                 |> lisp_to_string
                 |> send_to_solver;
+                LA_SMT.Array_solver.save_implications ()
+                |> List.iter (fun c ->
+                    expr_to_smt c |> assert_formula_str);
                 cards := new_cards @ !cards
               end
             | Lisp_rec (Lisp_string "check-sat" :: []) ->
