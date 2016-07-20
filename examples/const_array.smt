@@ -1,4 +1,4 @@
-(set-logic QF_LIRA)
+(set-logic QF_ALIRA)
 (declare-fun N () Int)
 (declare-range A (0 N))
 (declare-fun x () (Array A Bool))

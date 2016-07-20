@@ -1,4 +1,4 @@
-(set-logic QF_LIA)
+(set-logic QF_AALIA)
 (declare-fun x () Int)
 (declare-fun y () Int)
 (declare-fun N () Int)

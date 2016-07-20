@@ -1,4 +1,4 @@
-(set-logic QF_LIA)
+(set-logic QF_ALIA)
 (declare-fun N () Int)
 (assert (>= N 1))
 (declare-range A (0 N))
