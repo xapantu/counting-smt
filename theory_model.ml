@@ -98,9 +98,18 @@ module LA_SMT = struct
     output_string !solver_out "\n";
     flush !solver_out
   
+
+  let formulae = ref []
+
   let assert_formula_str str =
+    formulae := str::!formulae
+
+  let flush_formulae () =
+    List.iter (fun str ->
     "(assert " ^ str ^ ")"
     |> send_to_solver
+      ) !formulae;
+    formulae := []
 
 
   let define_new_variable =
@@ -116,7 +125,8 @@ module LA_SMT = struct
         | Range(Expr a, Expr b) ->
           send_to_solver @@ "(declare-fun " ^ name ^ " () Int)";
           send_to_solver @@ Format.sprintf "(assert (and (<= %s %s) (< %s %s)))" (term_to_string a) name name (term_to_string b)
-        | Array(Range(_, _), Bool) -> ()
+        | Array(Range(_, _), Bool) ->
+          send_to_solver @@ Format.sprintf "(declare-fun %s () (Array Int Bool))" var.name
         | e -> failwith "Too complex array type"))
 
 
@@ -157,7 +167,7 @@ module LA_SMT = struct
    * at this moment, arrays are not seen. *)
   let var_is_raw v =
     match Variable_manager.(v.sort) with
-    | Int | Bool | Range(_) | Real -> true
+    | Int | Bool | Range(_) -> true
     | _ -> false
 
   let get_model () =
@@ -223,6 +233,7 @@ module LA_SMT = struct
 
 
   let push f =
+    flush_formulae ();
     send_to_solver "(push 1)";
     last_assumptions := [];
     let old_v = Hashtbl.copy !Variable_manager.vars in
@@ -272,6 +283,38 @@ module LA_SMT = struct
         | _ -> raise (TypeCheckingError (a, "bool"))
         with
         | Not_found -> failwith ("couldn't get variable " ^ a ^ "from model")
+      end
+    | (Array_access (a, i, n)) as e ->
+      begin
+        send_to_solver @@ Format.sprintf "(get-value (%s))" (term_to_string e);
+        let open Lisp in
+        let lisp = !solver_in
+                   |> Lexing.from_channel
+                   |> Lisp_parser.prog Lisp_lexer.read in
+        let lisp_val = match lisp with
+        | Lisp_rec(Lisp_rec(Lisp_rec(_) :: b :: []) :: [])  ->
+          b
+        | _ -> failwith "weird response from the solver"
+        in
+        let rec read_value: type a. a array term -> a = function
+          | Array_term(_, Tint) ->
+            begin
+            match lisp_val with
+            | Lisp_int i -> i
+            | _ -> failwith "not an int"
+            end
+          | Array_term(_, TBool) ->
+            begin
+            match lisp_val with
+            | Lisp_true -> true
+            | Lisp_false -> false
+            | _ -> failwith "not an int"
+            end
+          | Array_store(a, _, _) -> read_value a
+          | Array_access(_) -> failwith "nested arrays not supported"
+          | Ite(_, b, _) -> read_value b
+        in
+        read_value a
       end
     | e -> failwith @@ Format.sprintf "couldn't get that %s from model" (term_to_string e)
 
@@ -345,16 +388,60 @@ module LA_SMT = struct
     let ordering = interval_manager#ordering |> List.map List.hd in
     if very_verbose then
       interval_manager#print_ordering;
+    begin
     if List.length ordering >= 2 then
       let all_constraints = ensure_arrays (List.hd ordering) (List.tl ordering)
                             |> List.concat
       in
-      match all_constraints with
-      | t::q ->
-        let constraint_sum = List.fold_left (fun l s -> And(l, Theory_expr(s))) (Theory_expr t) q in
-        let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
-        Format.sprintf "(=> %s %s)" smt_assumptions (expr_to_smt constraint_sum) |> assert_formula_str
-      | [] -> ()
+        match all_constraints with
+        | t::q ->
+          let constraint_sum = List.fold_left (fun l s -> And(l, Theory_expr(s))) (Theory_expr t) q in
+          let smt_assumptions = assumptions_to_expr interval_manager#assumptions |> expr_to_smt in
+          Format.sprintf "(=> %s %s)" smt_assumptions (expr_to_smt constraint_sum) |> assert_formula_str
+        | [] -> ()
+    end;
+    let bounds =
+      interval_manager#ordering
+      |> List.map List.hd
+      |> List.map (fun i -> Expr i)
+      |> fun a -> (Ninf :: a) @ [Pinf]
+    in
+    let oracle_no_assume = oracle_rel (object method assume _ = () end)  model in
+    let terms_placed = Array_solver.place_array_terms oracle_no_assume interval_manager#assume bounds in
+    (* some invariants *)
+    (*assert (List.map snd terms_placed |> List.map (fun l -> List.map List.length l |> List.fold_left (+) 0) |> List.fold_left (+) 0 =
+      List.length (Array_solver.(IntSet.elements !implies)));
+    assert (List.length terms_placed = List.length bounds - 1);
+    assert (List.nth terms_placed (List.length terms_placed - 1) |> snd |> List.length = 0);*)
+    let _ = List.fold_left (fun (old_bound, elts) (new_bound, elts2) ->
+        List.iter (fun class_eq ->
+            assert (List.length class_eq >= 1);
+            let equalities = fst (List.fold_left (fun (l, t1) t2 ->
+                And(l, Theory_expr(Int_equality(Equality(t1, t2)))), t2)
+              (Theory_expr(BValue true), List.hd class_eq) (List.tl class_eq)) in
+            let repr = List.hd class_eq in
+            let guard = And (equalities,
+                             And(
+                               Theory_expr(
+                                 match old_bound with
+                                 | Ninf -> BValue true
+                                 | Expr a -> Greater(repr, a)
+                                 | _ -> assert false
+                               ),
+                               Not(Theory_expr(
+                                   match new_bound with
+                                   | Pinf -> BValue false
+                                   | Expr a -> Greater(repr, a)
+                                   | _ -> assert false
+                                 ))
+                             )) in
+            Format.eprintf "%s@." (expr_to_smt guard);
+          ) elts;
+        new_bound, elts2) (List.hd terms_placed) (List.tl terms_placed)
+    in ()
+
+
+
 
   let make_domain_intersection premodel (d1:arrayed_domain) (d2:arrayed_domain) =
     let oracle a b =
@@ -396,14 +483,9 @@ module LA_SMT = struct
     | Greater(a, IVar(v, n)) when v = var_name -> [auxiliary_constraints, (Ninf, Expr(minus (n-1) a))]
     | Int_equality(Equality(a, IVar(v, n))) when v = var_name -> [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
     | Int_equality(Equality(IVar(v, n), a)) when v = var_name -> [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
-    | Bool_equality(Equality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2))) ->
-      if index1 <> IVar(var_name, 0) then
-        failwith (Format.sprintf "incorrect index %s" (term_to_string index1));
-      if index2 <> IVar(var_name, 0) then
-        failwith (Format.sprintf "incorrect index %s" (term_to_string index2));
+    | Bool_equality(Equality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2))) when index1 = IVar(var_name, 0) && index2 = IVar(var_name, 0) ->
       [(Arrays.equality_arrays actx tab1 tab2 (not @@ xor neg1 neg2) array_init, (1, [0])), (Ninf, Pinf)]
-    | Bool_equality(Equality(Array_access(tab, index, neg), a)) ->
-      assert (index = IVar(var_name, 0)); 
+    | Bool_equality(Equality(Array_access(tab, index, neg), a)) when index = IVar(var_name, 0) ->
       let a_val = get_val_from_model model a in
       if a_val then
         assum#assume a
@@ -576,6 +658,7 @@ module LA_SMT = struct
   let build_full_model (m:abstract_model) = m.model
 
   let build_premodel () =
+    flush_formulae ();
     send_to_solver "(check-sat)";
     if is_sat () then
       let model = get_model () in
@@ -619,6 +702,7 @@ module LA_SMT = struct
       raise Unsat
   
   let build_abstract_model_in_context f =
+    flush_formulae ();
 
     send_to_solver "(push 1)";
     try

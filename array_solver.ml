@@ -15,8 +15,8 @@ module Array_solver(S: sig
   module StrSet = Set.Make (struct type t = a array term
       let compare = compare end)
 
-  module ImpliSet = Set.Make (struct
-      type t = bool array term * bool array term * int term * int term
+  module IntSet = Set.Make (struct
+      type t = int term
       let compare = compare
     end)
 
@@ -29,7 +29,7 @@ module Array_solver(S: sig
 
   type context = (a array term, a array term * StrSet.t) Hashtbl.t
 
-  let implies = ref ImpliSet.empty
+  let implies = ref IntSet.empty
 
   let ensure_class (ctx:context) a =
     if not (Hashtbl.mem ctx a) then
@@ -65,6 +65,7 @@ module Array_solver(S: sig
           let () = StrSet.iter (fun a ->
               Hashtbl.add ctx a fusion) class_total in
           true
+      | _ -> assert false
     else false
 
   let ensure_distinct_class ctx a b =
@@ -81,9 +82,10 @@ module Array_solver(S: sig
       Ite(Int_equality(Equality(b, index)), c, a)
     | Array_term(_) ->
       Array_access(repr, index, neg)
+    | Ite(_) | Array_access(_) -> failwith "nested arrays not supported"
 
   (* Record the equalities between the arrays, might raise Unsat at some point *)
-  let context_from_equality: a array equality list (*-> a equality list*) -> (bool term -> bool) -> (context * (a array term * a array term * bool) list (**  a equality list *)) = fun equalities_array (*equalities_elements*) oracle ->
+  let context_from_equality: a array equality list -> (bool term -> bool) -> (context * (a array term * a array term * bool) list) = fun equalities_array oracle ->
     let context = Hashtbl.create 10 in
     context, List.fold_left (fun disequalities eq ->
         match eq with
@@ -104,46 +106,53 @@ module Array_solver(S: sig
               else
                 raise Unsat
             end
-        | AEquality(a, b) | ExtEquality(a, b) -> (a, b, oracle (S.equality_to_rel eq)) :: disequalities
+        | AEquality(a, b) |  NoEquality(a, b) | Equality(a, b) -> (a, b, oracle (S.equality_to_rel eq)) :: disequalities
       ) [] equalities_array
-    (*,
-    List.fold_left (fun disequalities eq ->
-        match eq with
-        | Bool_equality(Array_access(a, i, neg), c) ->
-          let a = get_array_at 
-        | a -> (Format.eprintf "equality not handled@."; a :: disequalities)*)
 
-
-  (* Just a little help for the solver *)
-  let save_implications () =
-    let eqs, access = S.V.fold_rels (fun rel var (eqs, access) ->
-        match rel with
-        | Array_bool_equality(AEquality(_)) | Array_bool_equality(ExtEquality(_)) -> (rel, var)::eqs, access
-        | Array_access(_) -> eqs, (rel, var)::access
-        | _ -> eqs, access) ([], [])
+  (* Place every array terms between the bounds. It returns a which is formed by bounds
+   * and term that are immediately (that is, before any other bound) greater than a
+   * particular bound. *)
+  let place_array_terms: (bool term -> bool) -> (bool term -> unit) -> bound list -> (bound * int term list list) list = fun oracle assume bounds ->
+    (* merge classes *)
+    let elts =
+      IntSet.elements !implies
+      |> List.sort (fun a b ->
+          if oracle (Int_equality(Equality(a, b))) then 0
+          else if oracle (Greater(a, b)) then 1
+          else -1)
+      |> List.fold_left (fun l a ->
+          match l with
+          | [] -> [[a]]
+          | t::q ->
+            let repr = List.hd t in
+            if oracle (Int_equality(Equality(a, repr))) then
+              (a::t)::q
+            else
+              [a]::l
+        ) []
     in
-    List.map (function
-        | Array_bool_equality(AEquality(a, b)), eq_var | Array_bool_equality(ExtEquality(a, b)), eq_var ->
-          List.map (function
-              | Array_access(t, i1, true), term1 when a = t ->
-                List.fold_left (fun l access2 -> match access2 with
-                    | Array_access(t, i2, true), term2 when b = t ->
-                      if not (ImpliSet.mem (a, b, i1, i2) !implies) then
-                        (
-                          implies := ImpliSet.add (a, b, i1, i2) !implies;
-                          Or(Not(And(Theory_expr(BVar(eq_var.name, true)), Theory_expr(Int_equality(Equality(i1, i2))))), 
-                              Theory_expr(Bool_equality(Equality(BVar(term1.name, true), BVar(term2.name, true))))) :: l)
-                      else
-                        l
-                    | _ -> l) [] access
-              | _ -> []) access
-          |> List.concat
-        | _ -> assert false
-      ) eqs
-    |> List.concat
+    assert (List.map List.length elts |> List.fold_left (+) 0 = List.length (IntSet.elements !implies));
+    let elts_number = List.length (IntSet.elements !implies) in
+    match bounds with
+    | Ninf::q ->
+      let _, _, l = List.fold_left (fun (elts, last_bound, l) n ->
+          assert ((List.map snd l |> List.map (fun l -> List.map List.length l |> List.fold_left (+) 0) |> List.fold_left (+) 0) + (List.map List.length elts  |> List.fold_left (+) 0) = elts_number);
+          match n with
+          | Pinf ->
+            [], Pinf, (last_bound, elts) :: l
+          | Expr b ->
+            let current_elts, old_elts = List.partition (fun a ->
+              oracle (Greater(List.hd a, b))) elts in
+            current_elts, Expr b, (last_bound, old_elts)::l
+          | Ninf -> assert false
+        ) (elts, Ninf, []) q
+      in
+      List.rev l
+    | _ -> assert false
 
 
 
-  
+  let save_array_index: int term -> unit = fun t ->
+    implies := IntSet.add t !implies
 
 end

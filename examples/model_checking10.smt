@@ -1,5 +1,5 @@
 (set-info :smt-lib-version 2.0)
-(set-logic QF_LIRA)
+(set-logic QF_ALIRA)
 (push 1)
 (declare-fun N_P1 () Int)
 (declare-range P1 (0 N_P1))

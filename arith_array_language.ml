@@ -71,7 +71,6 @@ let rec term_to_string : type a. a term -> string = function
   | BVar(s, false) -> Format.sprintf "(not %s)" s
   | IValue i -> string_of_int i
   | Array_term(e, _) ->
-    Format.eprintf "this array should not be printed@.";
     e
   | Array_access(tab, index, false) ->
     Format.sprintf "(not %s)" (term_to_string (Array_access(tab, index, true)))
@@ -83,12 +82,10 @@ let rec term_to_string : type a. a term -> string = function
       | Unprintable_elements(e) -> e
     in
     let index = term_to_string index in
-    Format.eprintf "this array should not be printed@.";
     Format.sprintf "(select %s %s)" tab index
   | Ite(a, b, c) ->
     Format.sprintf "(ite %s %s %s)" (term_to_string a) (term_to_string b) (term_to_string c)
   | Array_store(tab, index, write) ->
-    Format.eprintf "this array should not be printed@.";
     let tab = term_to_string tab in
     let index = term_to_string index in
     let write = term_to_string write in

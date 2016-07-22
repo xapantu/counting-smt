@@ -1,4 +1,4 @@
-(set-logic QF_LIRA)
+(set-logic QF_ALIRA)
 (declare-fun N_PID () Int)
 (declare-range PID (0 N_PID))
 (declare-fun |s0.cx| () (Array PID Bool))

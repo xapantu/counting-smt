@@ -4,4 +4,4 @@ open Mixed_solver
 open Theory_model
 
 
-let _ = runner stdout (lexing cin) []
+let _ = runner stdout (Lexing.from_channel cin) []
