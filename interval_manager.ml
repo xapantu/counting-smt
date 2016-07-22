@@ -44,12 +44,13 @@ class interval_manager = object(this)
                     
   method print_assumptions =
     List.iter (fun l ->
-        Format.eprintf "%s@." (term_to_string l)) assumptions
+        Format.eprintf "%s " (term_to_string l)) assumptions
 
   method print_ordering =
-    List.iter (fun l ->
-        List.map term_to_string l |> String.concat " " |> Format.eprintf "(%s)@.";
+    List.map (fun l ->
+        List.map term_to_string l |> List.sort compare |> String.concat " "
       ) ordering
+    |> String.concat " # " |> Format.eprintf "%s@."
 
   method assumptions = assumptions
 

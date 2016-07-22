@@ -350,7 +350,7 @@ module LA_SMT = struct
       assert_equality (fun a -> Bool_equality a) a
     | BValue true -> true
     | BValue false -> false
-    | BVar(_) ->
+    | BVar(_) | Array_access(_) ->
         let a_val = get_val_from_model model r in
         if a_val then
           interval_manager#assume r
@@ -521,16 +521,15 @@ module LA_SMT = struct
       [(Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (1, [0])), (Ninf, Pinf)]
     | Bool_equality(Equality(a, Array_access(tab, index, neg))) ->
       make_domain_from_expr var_name premodel (Bool_equality(Equality(Array_access(tab, index, neg), a)))
-    | Array_access(tab, index, neg) ->
-      (assert (index = IVar(var_name, 0));
-       [(Arrays.equality_array actx tab neg array_init, (1, [0])), (Ninf, Pinf)])
+    | Array_access(tab, index, neg) when index = IVar(var_name, 0) ->
+       [(Arrays.equality_array actx tab neg array_init, (1, [0])), (Ninf, Pinf)]
     | Ite(r, a, b) ->
       let domain_cond = make_domain_from_expr var_name premodel r in
       let fst_domain = make_domain_intersection premodel domain_cond (make_domain_from_expr var_name premodel a) in
       let snd_domain =  make_domain_intersection premodel (domain_neg premodel domain_cond) (make_domain_from_expr var_name premodel b) in
       let d = make_domain_union premodel fst_domain snd_domain in
       d
-    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) | BVar(_) | BValue(_)->
+    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) | BVar(_) | BValue(_) | Array_access(_) ->
       if oracle_rel e then
         [auxiliary_constraints, (Ninf, Pinf)]
       else
