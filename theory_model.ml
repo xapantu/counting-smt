@@ -413,31 +413,58 @@ module LA_SMT = struct
       List.length (Array_solver.(IntSet.elements !implies)));
     assert (List.length terms_placed = List.length bounds - 1);
     assert (List.nth terms_placed (List.length terms_placed - 1) |> snd |> List.length = 0);*)
-    let _ = List.fold_left (fun (old_bound, elts) (new_bound, elts2) ->
-        List.iter (fun class_eq ->
-            assert (List.length class_eq >= 1);
-            let equalities = fst (List.fold_left (fun (l, t1) t2 ->
-                And(l, Theory_expr(Int_equality(Equality(t1, t2)))), t2)
-              (Theory_expr(BValue true), List.hd class_eq) (List.tl class_eq)) in
-            let repr = List.hd class_eq in
-            let guard = And (equalities,
-                             And(
-                               Theory_expr(
-                                 match old_bound with
-                                 | Ninf -> BValue true
-                                 | Expr a -> Greater(repr, a)
-                                 | _ -> assert false
-                               ),
-                               Not(Theory_expr(
-                                   match new_bound with
-                                   | Pinf -> BValue false
-                                   | Expr a -> Greater(repr, a)
-                                   | _ -> assert false
-                                 ))
-                             )) in
-            Format.eprintf "%s@." (expr_to_smt guard);
-          ) elts;
-        new_bound, elts2) (List.hd terms_placed) (List.tl terms_placed)
+    let _ =
+      List.fold_left (fun (old_bound, elts) (new_bound, elts2) ->
+          let every_assignments = List.map (fun class_eq ->
+              assert (List.length class_eq >= 1);
+              let equalities = fst (List.fold_left (fun (l, t1) t2 ->
+                  And(l, Theory_expr(Int_equality(Equality(t1, t2)))), t2)
+                  (Theory_expr(BValue true), List.hd class_eq) (List.tl class_eq)) in
+              let repr = List.hd class_eq in
+              let guard =
+                And (equalities,
+                     And(
+                       Theory_expr(
+                         match old_bound with
+                         | Ninf -> BValue true
+                         | Expr a -> Greater(repr, a)
+                         | _ -> assert false
+                       ),
+                       Not(Theory_expr(
+                           match new_bound with
+                           | Pinf -> BValue false
+                           | Expr a -> Greater(repr, a)
+                           | _ -> assert false
+                         ))
+                     )) in
+              let all_arrays = Arrays.assigned_arrays premodel.array_ctx in
+              let subdiv, guard = List.fold_left (fun (subdiv, guard) array_term ->
+                  let val_array = (get_val_from_model model (Array_access(array_term, repr, true))) in
+                  let eq = Bool_equality(Equality(BValue val_array, Array_access(array_term, repr, true))) in
+                  interval_manager#assume eq;
+                  Arrays.equality_array premodel.array_ctx array_term val_array subdiv, And(guard, Theory_expr(eq)))
+                  (Arrays.mk_full_subdiv premodel.array_ctx (Ninf, Pinf), guard) all_arrays in
+              match old_bound, new_bound with
+              | Expr a, Expr b ->
+                let subdiv_string = Arrays.array_sub_to_string premodel.array_ctx [Format.sprintf "%s!%s" (term_to_uid a) (term_to_uid b)] subdiv in
+                guard, (List.hd subdiv_string);
+              | _ -> failwith "out of bounds array"
+            ) elts in
+          let every_assignments = List.sort (fun a b -> compare (snd a) (snd b)) every_assignments in
+          begin
+          match every_assignments with
+          | [] -> ()
+          | (guard, var)::q ->
+            let guard, var, count, l = List.fold_left (fun (old_guard, old_var, old_count, l) (guard, var) ->
+                if var = old_var then
+                  And(old_guard, guard), var, old_count + 1, l
+                else
+                  guard, var, 1,  (old_guard, old_var, old_count)::l) (guard, var, 1, []) q in
+            let l = (guard, var, count) :: l in
+            List.iter (fun (guard, var, count) ->
+                Format.sprintf "(=> %s (>= %s %d))@." (expr_to_smt guard) var count |> assert_formula_str;) l
+          end;
+          new_bound, elts2) (List.hd terms_placed) (List.tl terms_placed)
     in ()
 
 
@@ -616,7 +643,7 @@ module LA_SMT = struct
               begin
                 let slices, assump = interval_manager#get_slices_of_ordering interval in
                 assumptions := assump @ !assumptions;
-                Arrays.array_sub_to_string premodel.array_ctx slices sub interval
+                Arrays.array_sub_to_string premodel.array_ctx slices sub
               end
           )
         |> List.concat

@@ -332,6 +332,13 @@ module Counting_solver(V:Variable_manager.VM) = struct
   let mk_full_subdiv: array_ctx -> interval -> array_subdivision = fun a b ->
     reset_subdivision a.hyps
 
+  let assigned_arrays: array_ctx -> bool array term list = fun ctx ->
+    let rec find_arrays = function
+      | None -> []
+      | Some s -> find_arrays s.left_tree @ find_arrays s.right_tree @ [Array_term(s.name, TBool)]
+    in
+    find_arrays ctx.hyps |> List.sort_uniq compare
+
   let rec is_top: array_subdivision -> bool = function
     | None -> true
     | Some a ->
@@ -341,7 +348,7 @@ module Counting_solver(V:Variable_manager.VM) = struct
        is_top a.left_tree)
 
 
-  let array_sub_to_string ctx prefix sub interval =
+  let array_sub_to_string ctx prefix sub =
     let rec all_true = function
       | None -> false
       | Some s ->
