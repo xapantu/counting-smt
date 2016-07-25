@@ -52,7 +52,7 @@ module Array_solver(S: sig
         | _ -> false) class_total in
     let c = StrSet.cardinal store in
     if c = 0 then
-      let fusion = repr_a, class_total in
+      let fusion = (match repr_a with | Array_term("", _) -> repr_b | _ -> repr_a), class_total in
       let () = StrSet.iter (fun a ->
           Hashtbl.add ctx a fusion) class_total in
       true

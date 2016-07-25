@@ -173,6 +173,7 @@ and lisp_to_array ctx =
     let b = lisp_to_int_texpr ctx b ~z:"" in
     let c = lisp_to_bool ctx c in
     Array_store(a, b, c)
+  | Lisp_rec (Lisp_rec (Lisp_string "as" :: _) :: _) -> Array_term("", TBool)
   | l -> raise (Not_allowed_for_type (lisp_to_string l, "array"))
 and lisp_to_bool ?z:(z="") ctx l =
   let open Lisp in
@@ -228,7 +229,7 @@ let rec extract_cards ?z:(z="") l =
             let rel = Array_bool_equality(ExtEquality(a, b)) in
             let v = Variable_manager.use_var_for_rel rel in
             ctx := Def( iff (Lisp_rec[Lisp_string "="; a_extracted; b_extracted]) (Lisp_string v.name)) :: !ctx;
-            Lisp_string v.name, !ctx
+            Lisp_rec[Lisp_string "="; a_extracted; b_extracted], !ctx
           end
         | e -> 
           let a_extracted, defs_a = extract_cards ~z a in
@@ -306,6 +307,7 @@ let rec runner stdout lexing_stdin cards' =
                     | Card a -> a
                     | Def _ -> raise Not_found) new_cards
                 in
+                LA_SMT.flush_formulae ();
                 List.iter (fun lisp ->
                     Lisp_rec [Lisp_string "assert"; lisp]
                     |> lisp_to_string

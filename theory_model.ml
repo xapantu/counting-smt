@@ -102,29 +102,29 @@ module LA_SMT = struct
   let formulae = ref []
 
   let assert_formula_str str =
-    formulae := str::!formulae
+    formulae := (Format.sprintf "(assert %s)" str)::!formulae
 
   let flush_formulae () =
-    List.iter (fun str ->
-    "(assert " ^ str ^ ")"
-    |> send_to_solver
-      ) !formulae;
+    List.rev !formulae |> List.iter send_to_solver;
     formulae := []
 
 
   let define_new_variable =
+    let add_formula str =
+      formulae := (Format.sprintf "(declare-fun %s)" str)::!formulae
+    in
     Variable_manager.(React.iter new_variables (fun var ->
         let name = var.name in
         match var.sort with
         | Int ->
-          send_to_solver @@ "(declare-fun " ^ name ^ " () Int)"
+          add_formula (name ^ " () Int")
         | Bool ->
-          send_to_solver @@ "(declare-fun " ^ name ^ " () Bool)"
+          add_formula (name ^ " () Bool");
         | Real ->
-          send_to_solver @@ "(declare-fun " ^ name ^ " () Real)"
+          add_formula (name ^ " () Real");
         | Range(Expr a, Expr b) ->
-          send_to_solver @@ "(declare-fun " ^ name ^ " () Int)";
-          send_to_solver @@ Format.sprintf "(assert (and (<= %s %s) (< %s %s)))" (term_to_string a) name name (term_to_string b)
+          add_formula (name ^ " () Int");
+          assert_formula_str @@ Format.sprintf "(and (<= %s %s) (< %s %s))" (term_to_string a) name name (term_to_string b)
         | Array(Range(_, _), Bool) ->
           send_to_solver @@ Format.sprintf "(declare-fun %s () (Array Int Bool))" var.name
         | e -> failwith "Too complex array type"))
