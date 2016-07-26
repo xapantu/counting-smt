@@ -25,11 +25,10 @@ module LA_SMT = struct
       type tsort = sort
     end)
 
-  type congruence = int * int list (* modulo * remainder *)
   module Variable_manager = Variable_manager.Variable_manager(Formula)
   module Arrays = Counting_solver.Counting_solver(Variable_manager)
   module Interval_manager = Interval_manager.Interval_manager(struct
-      type constraints = Arrays.array_subdivision * congruence
+      type constraints = Arrays.array_subdivision * Congruence.congruence
     end) 
 
   module Array_solver = Array_solver.Array_solver (struct
@@ -40,7 +39,7 @@ module LA_SMT = struct
     end)
 
 
-  type arrayed_interval = (Arrays.array_subdivision * congruence) * interval
+  type arrayed_interval = (Arrays.array_subdivision * Congruence.congruence) * interval
   type arrayed_domain = arrayed_interval list
   type interval_manager = Interval_manager.interval_manager
 
@@ -54,7 +53,7 @@ module LA_SMT = struct
 
   let print_domain_debug l =
     if List.length l > 0 then
-      List.iter (fun ((s, (m, r)), i) ->
+      List.iter (fun ((s, (m, _, r)), i) ->
           Arrays.print_tree s;
           Format.eprintf "%s [%d] = (%s)@." (inf_interval_to_string i) m (List.map string_of_int r |> String.concat ", ");) l
     else
@@ -375,8 +374,8 @@ module LA_SMT = struct
     let oracle a b =
       compare (get_val_from_model model a) (get_val_from_model model b)
     in
-    let is_top = fun (a, (m, r)) ->
-        Arrays.is_top a && (m = List.length r)
+    let is_top = fun (a, c) ->
+        Arrays.is_top a && Congruence.is_top c
     in
     interval_manager#add_to_ordering is_top oracle (List.concat all_domains);
     interval_manager#fix_ordering oracle;
@@ -478,7 +477,7 @@ module LA_SMT = struct
       (Format.eprintf "from@."; print_domain_debug d1; print_domain_debug d2);
     let d = premodel.interval_manager#intersection_domains oracle
         (fun (arrays1, congruence1) (arrays2, congruence2) ->
-           Arrays.array_subdivision_intersection premodel.array_ctx arrays1 arrays2, congruence1) d1 d2 in
+           Arrays.array_subdivision_intersection premodel.array_ctx arrays1 arrays2, Congruence.intersection congruence1 congruence2) d1 d2 in
     if very_verbose then
         (Format.eprintf "to@."; print_domain_debug d); 
     d
@@ -490,9 +489,9 @@ module LA_SMT = struct
       (fun (arrays1, congruence1) ->
         Arrays.array_subdivision_negation c arrays1, congruence1)
       (fun i ->
-         Arrays.mk_full_subdiv c i, (1, [0]))
-      (fun (a, (m, r)) ->
-        Arrays.is_top a && (m = List.length r))
+         Arrays.mk_full_subdiv c i, (1, 1, [0]))
+      (fun (a, c) ->
+        Arrays.is_top a && Congruence.is_top c)
 
   let make_domain_union a (d1:arrayed_domain) (d2:arrayed_domain) =
     let d  = make_domain_intersection a (domain_neg a d1) (domain_neg a d2) in
@@ -504,37 +503,38 @@ module LA_SMT = struct
     let assum = premodel.interval_manager in
     let oracle_rel = oracle_rel assum model in
     let array_init = Arrays.mk_full_subdiv actx (Ninf, Pinf) in
-    let auxiliary_constraints = array_init, (1, [0]) in
+    let auxiliary_constraints = array_init, (1, 1, [0]) in
     match e with
     | Greater(IVar(v, n), a) when v = var_name -> [auxiliary_constraints, (Expr (minus n a), Pinf)]
     | Greater(a, IVar(v, n)) when v = var_name -> [auxiliary_constraints, (Ninf, Expr(minus (n-1) a))]
     | Int_equality(Equality(a, IVar(v, n))) when v = var_name -> [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
     | Int_equality(Equality(IVar(v, n), a)) when v = var_name -> [auxiliary_constraints, (Expr(minus n a), Expr(minus (n-1) a))]
     | Bool_equality(Equality(Array_access(tab1, index1, neg1), Array_access(tab2, index2, neg2))) when index1 = IVar(var_name, 0) && index2 = IVar(var_name, 0) ->
-      [(Arrays.equality_arrays actx tab1 tab2 (not @@ xor neg1 neg2) array_init, (1, [0])), (Ninf, Pinf)]
+      [(Arrays.equality_arrays actx tab1 tab2 (not @@ xor neg1 neg2) array_init, (1, 1, [0])), (Ninf, Pinf)]
     | Bool_equality(Equality(Array_access(tab, index, neg), a)) when index = IVar(var_name, 0) ->
       let a_val = get_val_from_model model a in
       if a_val then
         assum#assume a
       else
         assum#assume (not_term a);
-      [(Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (1, [0])), (Ninf, Pinf)]
+      [(Arrays.equality_array actx tab (xor (not neg) a_val) array_init, (1, 1, [0])), (Ninf, Pinf)]
     | Bool_equality(Equality(a, Array_access(tab, index, neg))) ->
       make_domain_from_expr var_name premodel (Bool_equality(Equality(Array_access(tab, index, neg), a)))
     | Array_access(tab, index, neg) when index = IVar(var_name, 0) ->
-       [(Arrays.equality_array actx tab neg array_init, (1, [0])), (Ninf, Pinf)]
+       [(Arrays.equality_array actx tab neg array_init, (1, 1, [0])), (Ninf, Pinf)]
     | Ite(r, a, b) ->
       let domain_cond = make_domain_from_expr var_name premodel r in
       let fst_domain = make_domain_intersection premodel domain_cond (make_domain_from_expr var_name premodel a) in
       let snd_domain =  make_domain_intersection premodel (domain_neg premodel domain_cond) (make_domain_from_expr var_name premodel b) in
       let d = make_domain_union premodel fst_domain snd_domain in
       d
-    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) | BVar(_) | BValue(_) | Array_access(_) ->
+    | Mod(IVar(v, n), rem, div) when v = var_name ->
+      [(array_init, (div, 1, [rem])), (Ninf, Pinf)]
+    | Greater(_) | Int_equality(_) | Array_bool_equality(_) | Bool_equality(_) | BVar(_) | BValue(_) | Array_access(_) | Mod(_) ->
       if oracle_rel e then
         [auxiliary_constraints, (Ninf, Pinf)]
       else
         []
-    | Mod(_) -> assert false
 
   let replace_arrays ctx = 
     let rec aux = function
@@ -636,14 +636,18 @@ module LA_SMT = struct
       try
         domain
         |> List.map (fun ((sub, congruence), interval) ->
-            if Arrays.is_top sub then
+            if Arrays.is_top sub && Congruence.is_top congruence then
               [interval_to_string interval]
-            else
+            else if Arrays.is_top sub then
+              [Congruence.interval_to_string congruence interval]
+            else if Congruence.is_top congruence then
               begin
                 let slices, assump = interval_manager#get_slices_of_ordering interval in
                 assumptions := assump @ !assumptions;
                 Arrays.array_sub_to_string premodel.array_ctx slices sub
               end
+            else
+              failwith "arrays and congruence constraints at the same time, not supported at this moment"
           )
         |> List.concat
         |> List.filter ((<>) "0")

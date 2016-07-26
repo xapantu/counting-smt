@@ -8,7 +8,7 @@ exception Bad_interval
 module Interval_manager(Constraints: sig
     type constraints
   end) = struct
-type congruence = int * (int list)
+type congruence = Congruence.congruence
 type constraints = Constraints.constraints
 type constrained_interval = constraints * interval
 type constrained_domain = constrained_interval list
